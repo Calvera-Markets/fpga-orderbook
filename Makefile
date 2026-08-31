@@ -1,36 +1,47 @@
 VERILATOR ?= verilator
-TOP       := price_level_fifo
-VDIR      := obj_dir
-BIN       := $(VDIR)/$(TOP)_sim
-RTL       := rtl/pkg/exch_pkg.sv rtl/book/price_level_fifo.sv
-TB        := tb/price_level_fifo_tb.cpp
+COMMON_RTL := rtl/pkg/exch_pkg.sv rtl/book/price_level_fifo.sv
 
-VERILATOR_FLAGS := --cc --exe --build -sv -Wall \
-	--top-module $(TOP) \
-	-Mdir $(VDIR) \
-	-o $(TOP)_sim \
-	-CFLAGS "-std=c++17 -Wall"
+FIFO_TOP := price_level_fifo
+BOOK_TOP := one_symbol_book
+FIFO_DIR := obj_dir/price_level_fifo
+BOOK_DIR := obj_dir/book
+FIFO_BIN := $(FIFO_DIR)/$(FIFO_TOP)_sim
+BOOK_BIN := $(BOOK_DIR)/$(BOOK_TOP)_sim
 
-.PHONY: all help sim golden test clean
+VFLAGS := --cc --exe --build -sv -Wall -CFLAGS "-std=c++17 -Wall"
+
+.PHONY: all help golden sim sim-fifo sim-book test clean
 
 all: test
 
 help:
-	@echo "make golden  - Python golden-model unit tests (no Verilator)"
-	@echo "make sim     - Build and run the price-level FIFO Verilator bench"
-	@echo "make test    - golden + sim"
-	@echo "make clean   - remove obj_dir"
+	@echo "make golden    Python golden-model tests"
+	@echo "make sim-fifo  price-level FIFO Verilator bench"
+	@echo "make sim-book  one-symbol book Verilator bench"
+	@echo "make sim       both RTL benches"
+	@echo "make test      golden + sim"
+	@echo "make clean     remove obj_dir"
 
 golden:
-	cd sw/golden && python3 -m unittest test_price_level -v
+	cd sw/golden && python3 -m unittest discover -v
 
-$(BIN): $(RTL) $(TB)
-	$(VERILATOR) $(VERILATOR_FLAGS) $(RTL) $(TB)
+$(FIFO_BIN): $(COMMON_RTL) tb/price_level_fifo_tb.cpp
+	$(VERILATOR) $(VFLAGS) --top-module $(FIFO_TOP) -Mdir $(FIFO_DIR) -o $(FIFO_TOP)_sim \
+		$(COMMON_RTL) tb/price_level_fifo_tb.cpp
 
-sim: $(BIN)
-	$(BIN)
+$(BOOK_BIN): $(COMMON_RTL) rtl/book/one_symbol_book.sv tb/one_symbol_book_tb.cpp
+	$(VERILATOR) $(VFLAGS) --top-module $(BOOK_TOP) -Mdir $(BOOK_DIR) -o $(BOOK_TOP)_sim \
+		$(COMMON_RTL) rtl/book/one_symbol_book.sv tb/one_symbol_book_tb.cpp
+
+sim-fifo: $(FIFO_BIN)
+	$(FIFO_BIN)
+
+sim-book: $(BOOK_BIN)
+	$(BOOK_BIN)
+
+sim: sim-fifo sim-book
 
 test: golden sim
 
 clean:
-	rm -rf $(VDIR)
+	rm -rf obj_dir
