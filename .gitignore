@@ -1,0 +1,8 @@
+obj_dir/
+*.vcd
+*.fst
+__pycache__/
+.pytest_cache/
+*.swp
+.DS_Store
+design/*
