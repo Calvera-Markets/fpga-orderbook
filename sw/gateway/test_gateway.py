@@ -73,9 +73,9 @@ class TestExchangeWal(unittest.TestCase):
             a.limit(2, SIDE_SELL, 100, 10, 2)
             cmds = [x for x in Wal(wal).read_all() if x["type"] == "cmd"]
             self.assertEqual(cmds[0]["pipe"], 1)
-            self.assertEqual(cmds[1]["pipe"], 0)
+            self.assertEqual(cmds[1]["pipe"], 2)
             self.assertEqual(a.venue.seq[1], 1)
-            self.assertEqual(a.venue.seq[0], 1)
+            self.assertEqual(a.venue.seq[2], 1)
             b = Exchange(wal)
             self.assertEqual(b.venue.book(1).bbo_bid_qty, 10)
             self.assertEqual(b.venue.book(2).bbo_ask_qty, 10)
@@ -138,7 +138,7 @@ class TestTickersAndMd(unittest.TestCase):
             exch = Exchange(Path(tmp) / "exch.wal")
             out = handle_line(exch, "LIMIT BUY 3 10 1 8")
             assert out is not None
-            self.assertIn("pipe=1", out)
+            self.assertIn("pipe=3", out)
 
     def test_fill_then_md_trade_order(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

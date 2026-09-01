@@ -15,8 +15,8 @@ These keep the first RTL from becoming a science project. Change them in this fi
 | `order_id` | 64-bit, unique by software invariant | RTL cancels the oldest slot if duplicates exist |
 | Book bound | 16 orders per price level (v1) | Fits combinational compact; BRAM later |
 | Multi-symbol | Pattern 4: `pipe = symbol_id % K` | Disjoint books per pipe; see design/pattern-4.md |
-| `K` / `N_PIPES` | 2 | Prove parallel issue; raise later |
-| RTL books per pipe | 4 | `local = symbol / K`; NAK if out of range |
+| `K` / `N_PIPES` | 4 | `pipe = symbol_id % K`; raise further if measured |
+| RTL books per pipe | 8 | `local = symbol / K`; NAK if out of range |
 | Sequence | Per pipe | No venue-wide match order |
 | Persistence | Software WAL + replay | Chip SRAM is volatile |
 | Reset | Synchronous, active-low `rst_n` | FPGA-friendly |

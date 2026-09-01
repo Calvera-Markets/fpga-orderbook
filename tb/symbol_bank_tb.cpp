@@ -144,6 +144,18 @@ void test_out_of_range_nak() {
   expect(!r.ok, "oor nak");
 }
 
+void test_beyond_old_n_syms() {
+  // N_SYMS_PER_PIPE was 4; local 4 must now rest, local 8 NAK.
+  reset();
+  Rsp r = issue(4, BOOK_LIMIT, SIDE_BUY, 50, 5, 11);
+  expect(r.ok, "fifth book rests");
+  expect_eq_u64(r.rest, 5, "fifth book qty");
+  r = issue(4, BOOK_LIMIT, SIDE_SELL, 50, 5, 12);
+  expect_eq_u64(r.filled, 5, "fifth book fill");
+  r = issue(8, BOOK_LIMIT, SIDE_BUY, 10, 1, 13);
+  expect(!r.ok, "ninth book oor");
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -153,6 +165,7 @@ int main(int argc, char **argv) {
   test_same_symbol_matches();
   test_cancel();
   test_out_of_range_nak();
+  test_beyond_old_n_syms();
   delete top;
   if (errors) {
     std::cerr << "FAILED " << errors << " of " << checks << " checks\n";

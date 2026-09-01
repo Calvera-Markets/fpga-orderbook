@@ -24,10 +24,10 @@ bank[0]   bank[1]     one in-flight order per bank
 | Knob | v1 |
 |---|---|
 | `SYMBOL_W` | 16 |
-| `K` / `N_PIPES` | 2 |
+| `K` / `N_PIPES` | 4 |
 | Map | `pipe = symbol_id % N_PIPES` |
 | Local index | `local = symbol_id / N_PIPES` |
-| Books per pipe | RTL `N_SYMS_PER_PIPE = 4` (symbols `0 .. K*N-1`) |
+| Books per pipe | RTL `N_SYMS_PER_PIPE = 8` (symbols `0 .. K*N-1`) |
 | Software books | unbounded `dict` per pipe |
 | Seq | per pipe, not venue-wide |
 | WAL | one JSONL file; each `cmd` has `symbol`, `pipe`, `seq` |

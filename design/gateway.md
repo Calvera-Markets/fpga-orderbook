@@ -50,13 +50,13 @@ Path given by `--wal` (default `data/exch.wal`). JSONL, one object per line, `fs
 | `type` | Fields |
 |---|---|
 | `instrument` | `name` (ticker), `id` (dense integer). Written once on first intern. No `seq`. |
-| `cmd` | `seq`, `pipe`, `op` (`limit`\|`cancel`), `symbol` (int), `side`, `price`, `qty`, `oid` |
+| `cmd` | `seq`, `pipe`, `op` (`limit`\|`cancel`), `symbol` (int, or `null` on unknown cancel), `side`, `price`, `qty`, `oid` |
 | `rsp` | `seq`, `pipe`, `ok`, `oid`, `filled`, `rest`, `unrested` |
 | `fill` | `seq`, `pipe`, `maker`, `taker`, `price`, `qty` |
 
-`seq` is per pipe, one per inbound mutating command. `BBO` does not bump seq and is not logged. Replay binds `instrument` rows first (file order), reserves every `cmd.symbol`, then applies cmds. Tickers never appear on `cmd`.
+`seq` is per pipe, one per inbound mutating command. `BBO` does not bump seq and is not logged. Replay binds `instrument` rows first (file order), reserves every non-null `cmd.symbol`, then applies cmds. Unknown cancel logs `symbol: null` and does not reserve. Tickers never appear on `cmd`.
 
-**Replay:** read the file, apply only `cmd` records to a new `Book`, then append new cmds. Do not write the WAL during replay.
+**Replay:** bind `instrument` rows, reserve non-null `cmd.symbol`, apply `cmd` records to a new `Book`, then append new cmds. Do not write the WAL during replay.
 
 ## CLI
 

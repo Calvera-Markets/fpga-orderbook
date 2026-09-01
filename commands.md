@@ -12,7 +12,7 @@ make golden     # Python tests: FIFO + book + venue + partition + gateway
 make sim-fifo   # price-level FIFO Verilator bench
 make sim-book   # one-symbol book Verilator bench
 make sim-bank   # multi-symbol bank (one pipe)
-make sim-part   # partitioned engine (K=2 pipes)
+make sim-part   # partitioned engine (K=4 pipes)
 make sim        # all RTL benches
 make test       # golden + sim
 make run        # interactive mini-exchange (WAL data/exch.wal)

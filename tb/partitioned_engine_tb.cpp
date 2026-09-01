@@ -12,7 +12,9 @@ constexpr uint8_t BOOK_LIMIT = 0;
 constexpr uint8_t BOOK_CANCEL = 1;
 constexpr uint8_t SIDE_BUY = 0;
 constexpr uint8_t SIDE_SELL = 1;
-constexpr int N_PIPES = 2;
+// Keep in sync with exch_pkg.
+constexpr int N_PIPES = 4;
+constexpr int N_SYMS_PER_PIPE = 8;
 
 int errors = 0;
 int checks = 0;
@@ -177,25 +179,58 @@ void test_parallel_issue() {
   fire(1, BOOK_LIMIT, SIDE_BUY, 100, 10, 4);
   int gap = cycles - start;
   expect(gap <= 4, "second fire without waiting for first match");
-  bool got[2] = {false, false};
-  Rsp rs[2]{};
+  bool got0 = false;
+  bool got1 = false;
+  Rsp r0{};
+  Rsp r1{};
   int guard = 0;
-  while ((!got[0] || !got[1]) && guard++ < 10000) {
-    for (int p = 0; p < N_PIPES; p++) {
-      if (!got[p] && ((top->rsp_valid >> p) & 1)) {
-        got[p] = true;
-        rs[p].ok = (top->rsp_ok >> p) & 1;
-        rs[p].filled = top->rsp_filled_qty[p];
-      }
+  while ((!got0 || !got1) && guard++ < 10000) {
+    if (!got0 && ((top->rsp_valid >> 0) & 1)) {
+      got0 = true;
+      r0.ok = (top->rsp_ok >> 0) & 1;
+      r0.filled = top->rsp_filled_qty[0];
     }
-    if (!got[0] || !got[1]) {
+    if (!got1 && ((top->rsp_valid >> 1) & 1)) {
+      got1 = true;
+      r1.ok = (top->rsp_ok >> 1) & 1;
+      r1.filled = top->rsp_filled_qty[1];
+    }
+    if (!got0 || !got1) {
       tick();
     }
   }
-  expect(got[0] && got[1], "both pipes responded");
-  expect_eq_u64(rs[0].filled, 10, "pipe0 fill");
-  expect_eq_u64(rs[1].filled, 10, "pipe1 fill");
+  expect(got0 && got1, "both pipes responded");
+  expect_eq_u64(r0.filled, 10, "pipe0 fill");
+  expect_eq_u64(r1.filled, 10, "pipe1 fill");
   std::cout << "parallel_issue gap_cycles=" << gap << "\n";
+}
+
+void test_four_pipes() {
+  reset();
+  issue(0, BOOK_LIMIT, SIDE_SELL, 100, 10, 1);
+  issue(1, BOOK_LIMIT, SIDE_SELL, 100, 10, 2);
+  issue(2, BOOK_LIMIT, SIDE_SELL, 100, 10, 3);
+  issue(3, BOOK_LIMIT, SIDE_SELL, 100, 10, 4);
+  Rsp r = issue(3, BOOK_LIMIT, SIDE_BUY, 100, 10, 5);
+  expect_eq_u64(r.filled, 10, "pipe3 self-fill");
+  r = issue(0, BOOK_LIMIT, SIDE_BUY, 100, 10, 6);
+  expect_eq_u64(r.filled, 10, "pipe0 still full");
+  r = issue(2, BOOK_LIMIT, SIDE_BUY, 100, 10, 7);
+  expect_eq_u64(r.filled, 10, "pipe2 still full");
+  r = issue(1, BOOK_LIMIT, SIDE_BUY, 100, 10, 8);
+  expect_eq_u64(r.filled, 10, "pipe1 still full");
+}
+
+void test_high_local() {
+  reset();
+  // symbol 16 → pipe 0, local 4 (OOR when N_SYMS_PER_PIPE was 4)
+  Rsp r = issue(N_PIPES * 4, BOOK_LIMIT, SIDE_BUY, 50, 5, 30);
+  expect(r.ok, "local 4 rests");
+  expect_eq_u64(r.rest, 5, "local 4 qty");
+  r = issue(N_PIPES * 4, BOOK_LIMIT, SIDE_SELL, 50, 5, 31);
+  expect_eq_u64(r.filled, 5, "local 4 fill");
+  r = issue(N_PIPES * N_SYMS_PER_PIPE, BOOK_LIMIT, SIDE_BUY, 10, 1, 32);
+  expect(!r.ok, "local 8 oor");
 }
 
 }  // namespace
@@ -208,6 +243,8 @@ int main(int argc, char **argv) {
   test_cancel();
   test_cancel_without_symbol();
   test_parallel_issue();
+  test_four_pipes();
+  test_high_local();
   delete top;
   if (errors) {
     std::cerr << "FAILED " << errors << " of " << checks << " checks\n";

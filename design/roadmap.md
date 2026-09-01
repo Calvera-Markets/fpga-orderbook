@@ -7,12 +7,12 @@
 - One-symbol book (`rtl/book/one_symbol_book.sv`) — GTC limit + cancel, fills, BBO
 - Python golden models (`sw/golden/`)
 - Software mini-exchange (`sw/gateway/`) — text protocol, WAL, replay
-- Pattern 4: `pipe = symbol_id % 2`, Python partitions + RTL `partitioned_engine`
+- Pattern 4: `pipe = symbol_id % 4`, Python partitions + RTL `partitioned_engine` (`N_SYMS_PER_PIPE = 8`)
 - `make test` runs golden, gateway, fifo, book, bank, partitioned engine
 
 ## Next
 
-Raise `K` / books-per-pipe when measured. Verilator as a library behind the gateway. WAL file per pipe.
+Verilator as a library behind the gateway. WAL file per pipe.
 
 ## Later
 
