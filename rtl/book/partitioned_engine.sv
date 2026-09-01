@@ -31,11 +31,69 @@ module partitioned_engine
   output logic [QTY_W-1:0]   evt_qty [N_PIPES]
 );
 
-  wire [PIPE_W-1:0] pipe_sel = PIPE_W'(32'(cmd_symbol) % 32'(N_PIPES));
+  logic               map_hit;
+  logic [SYMBOL_W-1:0] map_sym;
+  logic               wr_en, wr_clear;
+  logic [OID_W-1:0]   wr_oid_r;
+  logic [SYMBOL_W-1:0] wr_sym_r;
+  logic [OID_W-1:0]   last_oid [N_PIPES];
+  logic [SYMBOL_W-1:0] last_sym [N_PIPES];
+  logic               last_op  [N_PIPES];
+
+  wire [SYMBOL_W-1:0] route_sym =
+      (cmd_op == BOOK_CANCEL && map_hit) ? map_sym : cmd_symbol;
+  wire [PIPE_W-1:0] pipe_sel = PIPE_W'(32'(route_sym) % 32'(N_PIPES));
   logic [N_PIPES-1:0] bank_ready;
   logic [N_PIPES-1:0] bank_cmd_valid;
 
   assign cmd_ready = bank_ready[pipe_sel];
+
+  oid_map u_oids (
+    .clk, .rst_n,
+    .wr_en, .wr_clear,
+    .wr_oid    (wr_oid_r),
+    .wr_symbol (wr_sym_r),
+    .rd_oid    (cmd_oid),
+    .rd_hit    (map_hit),
+    .rd_symbol (map_sym)
+  );
+
+  always_ff @(posedge clk) begin
+    if (!rst_n) begin
+      for (int p = 0; p < N_PIPES; p++) begin
+        last_oid[p] <= '0;
+        last_sym[p] <= '0;
+        last_op[p]  <= BOOK_LIMIT;
+      end
+    end else if (cmd_valid && cmd_ready) begin
+      last_oid[pipe_sel] <= cmd_oid;
+      last_sym[pipe_sel] <= route_sym;
+      last_op[pipe_sel]  <= cmd_op;
+    end
+  end
+
+  always_ff @(posedge clk) begin
+    if (!rst_n) begin
+      wr_en    <= 1'b0;
+      wr_clear <= 1'b0;
+      wr_oid_r <= '0;
+      wr_sym_r <= '0;
+    end else begin
+      wr_en    <= 1'b0;
+      wr_clear <= 1'b0;
+      for (int p = 0; p < N_PIPES; p++) begin
+        if (rsp_valid[p] && last_op[p] == BOOK_LIMIT && rsp_rest_qty[p] != '0) begin
+          wr_en    <= 1'b1;
+          wr_oid_r <= last_oid[p];
+          wr_sym_r <= last_sym[p];
+        end
+        if (rsp_valid[p] && last_op[p] == BOOK_CANCEL && rsp_ok[p]) begin
+          wr_clear <= 1'b1;
+          wr_oid_r <= last_oid[p];
+        end
+      end
+    end
+  end
 
   genvar gi;
   generate
@@ -54,7 +112,8 @@ module partitioned_engine
         .clk, .rst_n,
         .cmd_valid (bank_cmd_valid[gi]),
         .cmd_ready (bank_ready[gi]),
-        .cmd_symbol, .cmd_op, .cmd_side, .cmd_price, .cmd_qty, .cmd_oid,
+        .cmd_symbol (route_sym),
+        .cmd_op, .cmd_side, .cmd_price, .cmd_qty, .cmd_oid,
         .rsp_valid (rsp_valid[gi]),
         .rsp_ok    (rsp_ok[gi]),
         .rsp_oid   (rsp_oid[gi]),

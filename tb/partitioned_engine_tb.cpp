@@ -145,6 +145,18 @@ void test_cancel() {
   expect_eq_u64(r.rest, 8, "cancel qty");
 }
 
+void test_cancel_without_symbol() {
+  reset();
+  issue(1, BOOK_LIMIT, SIDE_BUY, 50, 8, 9);
+  for (int i = 0; i < 8; i++) {
+    tick();
+  }
+  fire(0, BOOK_CANCEL, 0, 0, 0, 9);
+  Rsp r = wait_pipe(1);
+  expect(r.ok, "oid map routes cancel");
+  expect_eq_u64(r.rest, 8, "cancel qty via map");
+}
+
 void test_same_symbol_fifo() {
   reset();
   issue(0, BOOK_LIMIT, SIDE_SELL, 100, 10, 1);
@@ -194,6 +206,7 @@ int main(int argc, char **argv) {
   test_no_cross_pipe();
   test_same_symbol_fifo();
   test_cancel();
+  test_cancel_without_symbol();
   test_parallel_issue();
   delete top;
   if (errors) {

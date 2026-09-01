@@ -48,9 +48,9 @@ $(BANK_BIN): $(BOOK_RTL) rtl/book/symbol_bank.sv tb/symbol_bank_tb.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $(BANK_TOP) -Mdir $(BANK_DIR) -o $(BANK_TOP)_sim \
 		$(BOOK_RTL) rtl/book/symbol_bank.sv tb/symbol_bank_tb.cpp
 
-$(PART_BIN): $(BOOK_RTL) rtl/book/symbol_bank.sv rtl/book/partitioned_engine.sv tb/partitioned_engine_tb.cpp
+$(PART_BIN): $(BOOK_RTL) rtl/book/symbol_bank.sv rtl/book/oid_map.sv rtl/book/partitioned_engine.sv tb/partitioned_engine_tb.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $(PART_TOP) -Mdir $(PART_DIR) -o $(PART_TOP)_sim \
-		$(BOOK_RTL) rtl/book/symbol_bank.sv rtl/book/partitioned_engine.sv tb/partitioned_engine_tb.cpp
+		$(BOOK_RTL) rtl/book/symbol_bank.sv rtl/book/oid_map.sv rtl/book/partitioned_engine.sv tb/partitioned_engine_tb.cpp
 
 sim-fifo: $(FIFO_BIN)
 	$(FIFO_BIN)
