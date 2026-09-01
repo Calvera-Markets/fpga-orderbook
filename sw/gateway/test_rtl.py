@@ -28,7 +28,7 @@ class TestRtlGateway(unittest.TestCase):
 
     def test_rest_match_and_md(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            exch = self._ex(Path(tmp) / "exch.wal")
+            exch = self._ex(Path(tmp))
             out = handle_line(exch, "LIMIT SELL 1 100 10 1")
             assert out is not None
             self.assertIn("OK oid=1", out)
@@ -41,7 +41,7 @@ class TestRtlGateway(unittest.TestCase):
 
     def test_no_cross_and_ticker(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            exch = self._ex(Path(tmp) / "exch.wal")
+            exch = self._ex(Path(tmp))
             handle_line(exch, "LIMIT BUY BTC 100 10 1")
             out = handle_line(exch, "LIMIT SELL ETH 100 10 2")
             assert out is not None
@@ -52,7 +52,7 @@ class TestRtlGateway(unittest.TestCase):
 
     def test_cancel_and_replay(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            wal = Path(tmp) / "exch.wal"
+            wal = Path(tmp)
             a = self._ex(wal)
             a.limit(1, SIDE_SELL, 100, 10, 1)
             r = a.limit(1, SIDE_BUY, 100, 4, 2)

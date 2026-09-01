@@ -39,7 +39,7 @@ class TestProtocol(unittest.TestCase):
 class TestExchangeWal(unittest.TestCase):
     def test_rest_match_cancel_and_replay(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            wal = Path(tmp) / "exch.wal"
+            wal = Path(tmp)
             a = Exchange(wal)
             r = a.limit(1, SIDE_SELL, 100, 10, 1)
             self.assertTrue(r.ok)
@@ -59,15 +59,16 @@ class TestExchangeWal(unittest.TestCase):
             self.assertEqual(b.seq, 3)
             self.assertFalse(b.venue.book(1).bbo_ask_valid)
 
-            before = wal.read_text()
+            p1 = Wal(wal).pipe_path(1)
+            before = p1.read_text()
             b.limit(1, SIDE_BUY, 99, 1, 3)
             self.assertTrue(b.venue.book(1).bbo_bid_valid)
             self.assertEqual(b.seq, 4)
-            self.assertTrue(wal.read_text().startswith(before))
+            self.assertTrue(p1.read_text().startswith(before))
 
     def test_two_symbols_replay(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            wal = Path(tmp) / "exch.wal"
+            wal = Path(tmp)
             a = Exchange(wal)
             a.limit(1, SIDE_BUY, 100, 10, 1)
             a.limit(2, SIDE_SELL, 100, 10, 2)
@@ -81,11 +82,29 @@ class TestExchangeWal(unittest.TestCase):
             self.assertEqual(b.venue.book(2).bbo_ask_qty, 10)
             self.assertEqual(b.venue.book(1).bbo_ask_valid, False)
 
+    def test_one_file_per_pipe(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            wal = Path(tmp)
+            a = Exchange(wal)
+            a.limit(1, SIDE_BUY, 100, 10, 1)
+            a.limit(2, SIDE_SELL, 100, 10, 2)
+            self.assertFalse(Wal(wal).pipe_path(0).exists())
+            self.assertTrue(Wal(wal).pipe_path(1).exists())
+            self.assertTrue(Wal(wal).pipe_path(2).exists())
+            c1 = [x for x in Wal(wal).read_pipe(1) if x["type"] == "cmd"]
+            c2 = [x for x in Wal(wal).read_pipe(2) if x["type"] == "cmd"]
+            self.assertEqual(len(c1), 1)
+            self.assertEqual(len(c2), 1)
+            self.assertEqual(c1[0]["symbol"], 1)
+            self.assertEqual(c2[0]["symbol"], 2)
+            self.assertEqual(c1[0]["seq"], 1)
+            self.assertEqual(c2[0]["seq"], 1)
+
 
 class TestCli(unittest.TestCase):
     def test_handle_lines(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            exch = Exchange(Path(tmp) / "exch.wal")
+            exch = Exchange(Path(tmp))
             out = handle_line(exch, "LIMIT BUY 1 100 10 1")
             assert out is not None
             self.assertIn("OK oid=1 filled=0 rest=10 unrested=0 pipe=1", out)
@@ -101,7 +120,7 @@ class TestCli(unittest.TestCase):
 
     def test_no_cross_book_fill(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            exch = Exchange(Path(tmp) / "exch.wal")
+            exch = Exchange(Path(tmp))
             handle_line(exch, "LIMIT BUY 1 100 10 1")
             out = handle_line(exch, "LIMIT SELL 2 100 10 2")
             assert out is not None
@@ -112,7 +131,7 @@ class TestCli(unittest.TestCase):
 class TestTickersAndMd(unittest.TestCase):
     def test_ticker_intern_and_no_cross(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            exch = Exchange(Path(tmp) / "exch.wal")
+            exch = Exchange(Path(tmp))
             out = handle_line(exch, "LIMIT BUY BTC 100 10 1")
             assert out is not None
             self.assertIn("OK oid=1", out)
@@ -125,7 +144,7 @@ class TestTickersAndMd(unittest.TestCase):
 
     def test_ticker_match_and_md_trade(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            exch = Exchange(Path(tmp) / "exch.wal")
+            exch = Exchange(Path(tmp))
             handle_line(exch, "LIMIT SELL BTC 100 10 1")
             out = handle_line(exch, "LIMIT BUY BTC 100 4 2")
             assert out is not None
@@ -135,14 +154,14 @@ class TestTickersAndMd(unittest.TestCase):
 
     def test_integer_still_works(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            exch = Exchange(Path(tmp) / "exch.wal")
+            exch = Exchange(Path(tmp))
             out = handle_line(exch, "LIMIT BUY 3 10 1 8")
             assert out is not None
             self.assertIn("pipe=3", out)
 
     def test_fill_then_md_trade_order(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            exch = Exchange(Path(tmp) / "exch.wal")
+            exch = Exchange(Path(tmp))
             handle_line(exch, "LIMIT SELL BTC 100 10 1")
             out = handle_line(exch, "LIMIT BUY BTC 100 4 2")
             assert out is not None
@@ -153,7 +172,7 @@ class TestTickersAndMd(unittest.TestCase):
 
     def test_replay_tickers_eth_does_not_fill_btc(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            wal = Path(tmp) / "exch.wal"
+            wal = Path(tmp)
             a = Exchange(wal)
             handle_line(a, "LIMIT BUY BTC 100 10 1")
             handle_line(a, "LIMIT BUY ETH 100 10 2")
@@ -172,7 +191,7 @@ class TestTickersAndMd(unittest.TestCase):
 
     def test_mixed_int_then_ticker_replay(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            wal = Path(tmp) / "exch.wal"
+            wal = Path(tmp)
             a = Exchange(wal)
             handle_line(a, "LIMIT BUY 0 100 10 1")
             handle_line(a, "LIMIT BUY BTC 100 10 2")
@@ -190,7 +209,7 @@ class TestTickersAndMd(unittest.TestCase):
 
     def test_integer_wal_restart_then_intern_skips_used_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            wal = Path(tmp) / "exch.wal"
+            wal = Path(tmp)
             a = Exchange(wal)
             handle_line(a, "LIMIT BUY 0 100 10 1")
             b = Exchange(wal)
@@ -206,7 +225,7 @@ class TestTickersAndMd(unittest.TestCase):
 
     def test_unknown_cancel_replay_does_not_reserve_zero(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            wal = Path(tmp) / "exch.wal"
+            wal = Path(tmp)
             a = Exchange(wal)
             handle_line(a, "CANCEL 999")
             cmds = [x for x in Wal(wal).read_all() if x["type"] == "cmd"]
@@ -220,7 +239,7 @@ class TestTickersAndMd(unittest.TestCase):
 
     def test_unknown_cancel_then_intern_survives_replay(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            wal = Path(tmp) / "exch.wal"
+            wal = Path(tmp)
             a = Exchange(wal)
             handle_line(a, "CANCEL 999")
             handle_line(a, "LIMIT BUY BTC 100 10 1")
@@ -230,7 +249,7 @@ class TestTickersAndMd(unittest.TestCase):
 
     def test_bbo_unseen_ticker_does_not_allocate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            exch = Exchange(Path(tmp) / "exch.wal")
+            exch = Exchange(Path(tmp))
             handle_line(exch, "LIMIT BUY BTC 100 10 1")
             books_before = set(exch.venue.books)
             names_before = dict(exch.instruments._name_to_id)
@@ -242,7 +261,7 @@ class TestTickersAndMd(unittest.TestCase):
 
     def test_bbo_known_ticker_no_new_book(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            exch = Exchange(Path(tmp) / "exch.wal")
+            exch = Exchange(Path(tmp))
             handle_line(exch, "LIMIT BUY BTC 100 10 1")
             n = len(exch.venue.books)
             out = handle_line(exch, "BBO BTC")
@@ -253,7 +272,7 @@ class TestTickersAndMd(unittest.TestCase):
 
     def test_unknown_cancel_has_no_md(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            exch = Exchange(Path(tmp) / "exch.wal")
+            exch = Exchange(Path(tmp))
             handle_line(exch, "LIMIT BUY BTC 100 10 1")
             out = handle_line(exch, "CANCEL 999")
             assert out is not None
@@ -264,7 +283,7 @@ class TestTickersAndMd(unittest.TestCase):
 
     def test_invalid_ticker_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            exch = Exchange(Path(tmp) / "exch.wal")
+            exch = Exchange(Path(tmp))
             out = handle_line(exch, "LIMIT BUY +1 100 10 1")
             assert out is not None
             self.assertTrue(out.startswith("ERR"))

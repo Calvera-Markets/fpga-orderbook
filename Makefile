@@ -37,7 +37,7 @@ help:
 	@echo "make lib       Verilator partitioned_engine as libpe.so (gateway --engine rtl)"
 	@echo "make sim       all RTL benches"
 	@echo "make test      golden + all RTL sims + rtl gateway"
-	@echo "make run       interactive mini-exchange (Verilator engine, WAL data/exch.wal)"
+	@echo "make run       interactive mini-exchange (Verilator engine, WAL data/pipe*.wal)"
 	@echo "make clean     remove obj_dir"
 
 golden:
@@ -92,7 +92,7 @@ rtl-gw: $(LIBPE)
 test: golden sim rtl-gw
 
 run: $(LIBPE)
-	python3 sw/gateway/main.py --wal data/exch.wal --engine rtl
+	python3 sw/gateway/main.py --wal data --engine rtl
 
 clean:
 	rm -rf obj_dir

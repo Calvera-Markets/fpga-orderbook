@@ -76,7 +76,11 @@ def handle_line(exch: Exchange, line: str) -> str | None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="exch-core software mini-exchange")
-    parser.add_argument("--wal", default="data/exch.wal", help="WAL path (JSONL)")
+    parser.add_argument(
+        "--wal",
+        default="data",
+        help="WAL directory (pipe0.wal, pipe1.wal, …)",
+    )
     parser.add_argument(
         "--engine",
         choices=("python", "rtl"),

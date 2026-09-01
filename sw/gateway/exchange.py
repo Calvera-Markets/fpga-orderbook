@@ -31,47 +31,47 @@ class Exchange:
         sid, new = self.instruments.intern(token)
         if new:
             self.wal.append(
-                {"type": "instrument", "name": token.upper(), "id": sid}
+                {"type": "instrument", "name": token.upper(), "id": sid},
+                pipe_of(sid),
             )
         return sid
 
     def _replay(self) -> None:
-        for rec in self.wal.read_all():
-            kind = rec.get("type")
-            if kind == "instrument":
-                self.instruments.bind(str(rec["name"]), int(rec["id"]))
-                continue
-            if kind != "cmd":
-                continue
-            op = rec["op"]
-            if op == "limit":
-                symbol = int(rec["symbol"])
-                self.instruments.reserve(symbol)
-                p = int(rec.get("pipe", pipe_of(symbol)))
-                self.venue.limit(
-                    symbol,
-                    int(rec["side"]),
-                    int(rec["price"]),
-                    int(rec["qty"]),
-                    int(rec["oid"]),
-                    bump=False,
-                )
-                self.venue.seq[p] = max(self.venue.seq[p], int(rec["seq"]))
-            elif op == "cancel":
-                oid = int(rec["oid"])
-                symbol = self.venue.oids.get(oid)
-                if symbol is not None:
+        for p in range(self.wal.n_pipes):
+            for rec in self.wal.read_pipe(p):
+                kind = rec.get("type")
+                if kind == "instrument":
+                    self.instruments.bind(str(rec["name"]), int(rec["id"]))
+                    continue
+                if kind != "cmd":
+                    continue
+                op = rec["op"]
+                if op == "limit":
+                    symbol = int(rec["symbol"])
                     self.instruments.reserve(symbol)
-                p = int(rec.get("pipe", pipe_of(symbol) if symbol is not None else 0))
-                self.venue.cancel(oid, bump=False)
-                self.venue.seq[p] = max(self.venue.seq[p], int(rec["seq"]))
+                    self.venue.limit(
+                        symbol,
+                        int(rec["side"]),
+                        int(rec["price"]),
+                        int(rec["qty"]),
+                        int(rec["oid"]),
+                        bump=False,
+                    )
+                    self.venue.seq[p] = max(self.venue.seq[p], int(rec["seq"]))
+                elif op == "cancel":
+                    oid = int(rec["oid"])
+                    symbol = self.venue.oids.get(oid)
+                    if symbol is not None:
+                        self.instruments.reserve(symbol)
+                    self.venue.cancel(oid, bump=False)
+                    self.venue.seq[p] = max(self.venue.seq[p], int(rec["seq"]))
 
     def _log_cmd(self, rec: dict, pipe: int, seq: int) -> None:
         rec = dict(rec)
         rec["type"] = "cmd"
         rec["pipe"] = pipe
         rec["seq"] = seq
-        self.wal.append(rec)
+        self.wal.append(rec, pipe)
 
     def _log_result(self, rsp: BookRsp, pipe: int, seq: int) -> None:
         self.wal.append(
@@ -84,7 +84,8 @@ class Exchange:
                 "filled": rsp.filled_qty,
                 "rest": rsp.rest_qty,
                 "unrested": rsp.unrested_qty,
-            }
+            },
+            pipe,
         )
         for fill in rsp.fills:
             self.wal.append(
@@ -96,7 +97,8 @@ class Exchange:
                     "taker": fill.taker_oid,
                     "price": fill.price,
                     "qty": fill.qty,
-                }
+                },
+                pipe,
             )
 
     def limit(self, symbol: int, side: int, price: int, qty: int, oid: int) -> BookRsp:
