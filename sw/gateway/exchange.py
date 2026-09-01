@@ -1,4 +1,4 @@
-"""Venue + WAL: apply commands, persist, replay on start."""
+"""Partitioned venue + WAL. seq is per pipe."""
 
 from __future__ import annotations
 
@@ -10,47 +10,58 @@ if str(_GOLDEN) not in sys.path:
     sys.path.insert(0, str(_GOLDEN))
 
 from book import SIDE_BUY, BookRsp  # noqa: E402
-from venue import Venue
+from partition import PartitionedVenue, pipe_of
 
 from wal import Wal
 
 
 class Exchange:
     def __init__(self, wal_path: Path) -> None:
-        self.venue = Venue()
+        self.venue = PartitionedVenue()
         self.wal = Wal(wal_path)
-        self.seq = 0
         self._replay()
+
+    @property
+    def seq(self) -> int:
+        return sum(self.venue.seq)
 
     def _replay(self) -> None:
         for rec in self.wal.read_all():
             if rec.get("type") != "cmd":
                 continue
-            self.seq = max(self.seq, int(rec["seq"]))
             op = rec["op"]
             if op == "limit":
+                symbol = int(rec["symbol"])
+                p = int(rec.get("pipe", pipe_of(symbol)))
                 self.venue.limit(
-                    int(rec["symbol"]),
+                    symbol,
                     int(rec["side"]),
                     int(rec["price"]),
                     int(rec["qty"]),
                     int(rec["oid"]),
+                    bump=False,
                 )
+                self.venue.seq[p] = max(self.venue.seq[p], int(rec["seq"]))
             elif op == "cancel":
-                self.venue.cancel(int(rec["oid"]))
+                oid = int(rec["oid"])
+                symbol = self.venue.oids.get(oid)
+                p = int(rec.get("pipe", pipe_of(symbol) if symbol is not None else 0))
+                self.venue.cancel(oid, bump=False)
+                self.venue.seq[p] = max(self.venue.seq[p], int(rec["seq"]))
 
-    def _log_cmd(self, rec: dict) -> None:
-        self.seq += 1
+    def _log_cmd(self, rec: dict, pipe: int, seq: int) -> None:
         rec = dict(rec)
         rec["type"] = "cmd"
-        rec["seq"] = self.seq
+        rec["pipe"] = pipe
+        rec["seq"] = seq
         self.wal.append(rec)
 
-    def _log_result(self, rsp: BookRsp) -> None:
+    def _log_result(self, rsp: BookRsp, pipe: int, seq: int) -> None:
         self.wal.append(
             {
                 "type": "rsp",
-                "seq": self.seq,
+                "pipe": pipe,
+                "seq": seq,
                 "ok": rsp.ok,
                 "oid": rsp.oid,
                 "filled": rsp.filled_qty,
@@ -62,7 +73,8 @@ class Exchange:
             self.wal.append(
                 {
                     "type": "fill",
-                    "seq": self.seq,
+                    "pipe": pipe,
+                    "seq": seq,
                     "maker": fill.maker_oid,
                     "taker": fill.taker_oid,
                     "price": fill.price,
@@ -71,6 +83,8 @@ class Exchange:
             )
 
     def limit(self, symbol: int, side: int, price: int, qty: int, oid: int) -> BookRsp:
+        p = self.venue.pipe(symbol)
+        rsp = self.venue.limit(symbol, side, price, qty, oid)
         self._log_cmd(
             {
                 "op": "limit",
@@ -79,14 +93,17 @@ class Exchange:
                 "price": price,
                 "qty": qty,
                 "oid": oid,
-            }
+            },
+            p,
+            self.venue.seq[p],
         )
-        rsp = self.venue.limit(symbol, side, price, qty, oid)
-        self._log_result(rsp)
+        self._log_result(rsp, p, self.venue.seq[p])
         return rsp
 
     def cancel(self, oid: int) -> BookRsp:
         symbol = self.venue.oids.get(oid)
+        p = self.venue.pipe(symbol) if symbol is not None else 0
+        rsp = self.venue.cancel(oid)
         self._log_cmd(
             {
                 "op": "cancel",
@@ -95,8 +112,9 @@ class Exchange:
                 "price": 0,
                 "qty": 0,
                 "oid": oid,
-            }
+            },
+            p,
+            self.venue.seq[p],
         )
-        rsp = self.venue.cancel(oid)
-        self._log_result(rsp)
+        self._log_result(rsp, p, self.venue.seq[p])
         return rsp

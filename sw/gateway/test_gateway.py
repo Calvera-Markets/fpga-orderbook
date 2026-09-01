@@ -69,6 +69,11 @@ class TestExchangeWal(unittest.TestCase):
             a = Exchange(wal)
             a.limit(1, SIDE_BUY, 100, 10, 1)
             a.limit(2, SIDE_SELL, 100, 10, 2)
+            cmds = [x for x in Wal(wal).read_all() if x["type"] == "cmd"]
+            self.assertEqual(cmds[0]["pipe"], 1)
+            self.assertEqual(cmds[1]["pipe"], 0)
+            self.assertEqual(a.venue.seq[1], 1)
+            self.assertEqual(a.venue.seq[0], 1)
             b = Exchange(wal)
             self.assertEqual(b.venue.book(1).bbo_bid_qty, 10)
             self.assertEqual(b.venue.book(2).bbo_ask_qty, 10)
