@@ -11,6 +11,8 @@ if str(_GOLDEN) not in sys.path:
 
 from book import Book, Fill  # noqa: E402
 
+from protocol import format_sides
+
 
 def format_md_trade(fill: Fill, label: str) -> str:
     return (
@@ -20,8 +22,7 @@ def format_md_trade(fill: Fill, label: str) -> str:
 
 
 def format_md_bbo(book: Book, label: str) -> str:
-    bid = f"{book.bbo_bid_px}:{book.bbo_bid_qty}" if book.bbo_bid_valid else "-"
-    ask = f"{book.bbo_ask_px}:{book.bbo_ask_qty}" if book.bbo_ask_valid else "-"
+    bid, ask = format_sides(book)
     return f"MD BBO sym={label} bid={bid} ask={ask}"
 
 

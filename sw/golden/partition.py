@@ -37,6 +37,9 @@ class PartitionedVenue:
     def book(self, symbol: int) -> Book:
         return self.pipes[self.pipe(symbol)].book(symbol)
 
+    def try_book(self, symbol: int) -> Book | None:
+        return self.pipes[self.pipe(symbol)].try_book(symbol)
+
     @property
     def books(self) -> dict[int, Book]:
         out: dict[int, Book] = {}

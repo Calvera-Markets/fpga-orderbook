@@ -27,13 +27,26 @@ class Exchange:
     def seq(self) -> int:
         return sum(self.venue.seq)
 
+    def intern_symbol(self, token: str) -> int:
+        sid, new = self.instruments.intern(token)
+        if new:
+            self.wal.append(
+                {"type": "instrument", "name": token.upper(), "id": sid}
+            )
+        return sid
+
     def _replay(self) -> None:
         for rec in self.wal.read_all():
-            if rec.get("type") != "cmd":
+            kind = rec.get("type")
+            if kind == "instrument":
+                self.instruments.bind(str(rec["name"]), int(rec["id"]))
+                continue
+            if kind != "cmd":
                 continue
             op = rec["op"]
             if op == "limit":
                 symbol = int(rec["symbol"])
+                self.instruments.reserve(symbol)
                 p = int(rec.get("pipe", pipe_of(symbol)))
                 self.venue.limit(
                     symbol,
@@ -47,6 +60,8 @@ class Exchange:
             elif op == "cancel":
                 oid = int(rec["oid"])
                 symbol = self.venue.oids.get(oid)
+                if rec.get("symbol") is not None:
+                    self.instruments.reserve(int(rec["symbol"]))
                 p = int(rec.get("pipe", pipe_of(symbol) if symbol is not None else 0))
                 self.venue.cancel(oid, bump=False)
                 self.venue.seq[p] = max(self.venue.seq[p], int(rec["seq"]))

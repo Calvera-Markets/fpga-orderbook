@@ -7,6 +7,11 @@ import argparse
 import sys
 from pathlib import Path
 
+_GOLDEN = Path(__file__).resolve().parent.parent / "golden"
+if str(_GOLDEN) not in sys.path:
+    sys.path.insert(0, str(_GOLDEN))
+
+from book import Book  # noqa: E402
 from exchange import Exchange
 from marketdata import format_md
 from protocol import ParseError, format_bbo, format_rsp, parse
@@ -14,7 +19,7 @@ from protocol import ParseError, format_bbo, format_rsp, parse
 
 def handle_line(exch: Exchange, line: str) -> str | None:
     try:
-        cmd = parse(line, exch.instruments)
+        cmd = parse(line)
     except ParseError as exc:
         return f"ERR {exc}\n"
     kind = cmd[0]
@@ -23,8 +28,8 @@ def handle_line(exch: Exchange, line: str) -> str | None:
     if kind == "quit":
         return None
     if kind == "bbo":
-        _, symbol = cmd
-        if symbol is None:
+        _, token = cmd
+        if token is None:
             if not exch.venue.books:
                 return "BBO\n"
             lines = [
@@ -32,14 +37,19 @@ def handle_line(exch: Exchange, line: str) -> str | None:
                 for s in sorted(exch.venue.books)
             ]
             return "\n".join(lines) + "\n"
-        return (
-            format_bbo(
-                exch.venue.book(symbol), symbol, exch.instruments.label(symbol)
-            )
-            + "\n"
-        )
+        sid = exch.instruments.lookup(token)
+        if sid is None:
+            return "BBO bid=- ask=-\n"
+        book = exch.venue.try_book(sid)
+        if book is None:
+            return format_bbo(Book(), sid, exch.instruments.label(sid)) + "\n"
+        return format_bbo(book, sid, exch.instruments.label(sid)) + "\n"
     if kind == "limit":
-        _, side, symbol, price, qty, oid = cmd
+        _, side, token, price, qty, oid = cmd
+        try:
+            symbol = exch.intern_symbol(token)
+        except ValueError as exc:
+            return f"ERR {exc}\n"
         rsp = exch.limit(symbol, side, price, qty, oid)
         label = exch.instruments.label(symbol)
         exec_rep = format_rsp(
@@ -54,8 +64,10 @@ def handle_line(exch: Exchange, line: str) -> str | None:
         _, oid = cmd
         symbol = exch.venue.oids.get(oid)
         rsp = exch.cancel(oid)
-        book = exch.venue.book(symbol) if symbol is not None else exch.venue.book(0)
-        pipe = exch.venue.pipe(symbol) if symbol is not None else None
+        if symbol is None:
+            return format_rsp(rsp, Book())
+        book = exch.venue.book(symbol)
+        pipe = exch.venue.pipe(symbol)
         label = exch.instruments.label(symbol)
         exec_rep = format_rsp(rsp, book, symbol, pipe, label)
         return exec_rep + format_md(rsp.fills, book, label)

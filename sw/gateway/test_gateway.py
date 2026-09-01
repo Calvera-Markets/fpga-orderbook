@@ -18,13 +18,15 @@ from book import SIDE_BUY, SIDE_SELL  # noqa: E402
 
 class TestProtocol(unittest.TestCase):
     def test_parse_limit(self) -> None:
-        self.assertEqual(parse("LIMIT BUY 1 100 10 1"), ("limit", SIDE_BUY, 1, 100, 10, 1))
-        self.assertEqual(parse("limit sell 2 105 7 2"), ("limit", SIDE_SELL, 2, 105, 7, 2))
+        self.assertEqual(parse("LIMIT BUY 1 100 10 1"), ("limit", SIDE_BUY, "1", 100, 10, 1))
+        self.assertEqual(parse("limit sell 2 105 7 2"), ("limit", SIDE_SELL, "2", 105, 7, 2))
+        self.assertEqual(parse("LIMIT BUY BTC 100 10 1"), ("limit", SIDE_BUY, "BTC", 100, 10, 1))
 
     def test_parse_cancel_bbo_quit(self) -> None:
         self.assertEqual(parse("CANCEL 9"), ("cancel", 9))
         self.assertEqual(parse("BBO"), ("bbo", None))
-        self.assertEqual(parse("BBO 3"), ("bbo", 3))
+        self.assertEqual(parse("BBO 3"), ("bbo", "3"))
+        self.assertEqual(parse("BBO BTC"), ("bbo", "BTC"))
         self.assertEqual(parse("QUIT"), ("quit",))
 
     def test_parse_errors(self) -> None:
@@ -137,6 +139,92 @@ class TestTickersAndMd(unittest.TestCase):
             out = handle_line(exch, "LIMIT BUY 3 10 1 8")
             assert out is not None
             self.assertIn("pipe=1", out)
+
+    def test_fill_then_md_trade_order(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            exch = Exchange(Path(tmp) / "exch.wal")
+            handle_line(exch, "LIMIT SELL BTC 100 10 1")
+            out = handle_line(exch, "LIMIT BUY BTC 100 4 2")
+            assert out is not None
+            fill_at = out.find("FILL maker=1")
+            md_at = out.find("MD TRADE sym=BTC")
+            self.assertGreaterEqual(fill_at, 0)
+            self.assertGreater(md_at, fill_at)
+
+    def test_replay_tickers_eth_does_not_fill_btc(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            wal = Path(tmp) / "exch.wal"
+            a = Exchange(wal)
+            handle_line(a, "LIMIT BUY BTC 100 10 1")
+            handle_line(a, "LIMIT BUY ETH 100 10 2")
+            recs = Wal(wal).read_all()
+            inst = [x for x in recs if x["type"] == "instrument"]
+            self.assertEqual({(x["name"], x["id"]) for x in inst}, {("BTC", 0), ("ETH", 1)})
+            b = Exchange(wal)
+            self.assertEqual(b.instruments.lookup("BTC"), 0)
+            self.assertEqual(b.instruments.lookup("ETH"), 1)
+            out = handle_line(b, "LIMIT SELL ETH 100 10 3")
+            assert out is not None
+            self.assertIn("FILL maker=2 taker=3", out)
+            self.assertNotIn("FILL maker=1", out)
+            self.assertEqual(b.venue.book(0).bbo_bid_qty, 10)
+            self.assertFalse(b.venue.book(1).bbo_bid_valid)
+
+    def test_mixed_int_then_ticker_replay(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            wal = Path(tmp) / "exch.wal"
+            a = Exchange(wal)
+            handle_line(a, "LIMIT BUY 0 100 10 1")
+            handle_line(a, "LIMIT BUY BTC 100 10 2")
+            self.assertEqual(a.instruments.lookup("BTC"), 1)
+            b = Exchange(wal)
+            self.assertEqual(b.instruments.lookup("BTC"), 1)
+            out = handle_line(b, "LIMIT SELL BTC 100 10 3")
+            assert out is not None
+            self.assertIn("FILL maker=2", out)
+            self.assertNotIn("FILL maker=1", out)
+
+    def test_bbo_unseen_ticker_does_not_allocate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            exch = Exchange(Path(tmp) / "exch.wal")
+            handle_line(exch, "LIMIT BUY BTC 100 10 1")
+            books_before = set(exch.venue.books)
+            names_before = dict(exch.instruments._name_to_id)
+            out = handle_line(exch, "BBO ZZZ")
+            self.assertEqual(out, "BBO bid=- ask=-\n")
+            self.assertEqual(set(exch.venue.books), books_before)
+            self.assertEqual(exch.instruments._name_to_id, names_before)
+            self.assertIsNone(exch.instruments.lookup("ZZZ"))
+
+    def test_bbo_known_ticker_no_new_book(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            exch = Exchange(Path(tmp) / "exch.wal")
+            handle_line(exch, "LIMIT BUY BTC 100 10 1")
+            n = len(exch.venue.books)
+            out = handle_line(exch, "BBO BTC")
+            assert out is not None
+            self.assertIn("sym=BTC", out)
+            self.assertIn("bid=100:10", out)
+            self.assertEqual(len(exch.venue.books), n)
+
+    def test_unknown_cancel_has_no_md(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            exch = Exchange(Path(tmp) / "exch.wal")
+            handle_line(exch, "LIMIT BUY BTC 100 10 1")
+            out = handle_line(exch, "CANCEL 999")
+            assert out is not None
+            self.assertIn("NAK oid=999", out)
+            self.assertNotIn("MD ", out)
+            self.assertIn("BBO bid=- ask=-", out)
+            self.assertEqual(exch.venue.book(0).bbo_bid_qty, 10)
+
+    def test_invalid_ticker_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            exch = Exchange(Path(tmp) / "exch.wal")
+            out = handle_line(exch, "LIMIT BUY +1 100 10 1")
+            assert out is not None
+            self.assertTrue(out.startswith("ERR"))
+            self.assertEqual(exch.venue.books, {})
 
 
 if __name__ == "__main__":

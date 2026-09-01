@@ -49,11 +49,12 @@ Path given by `--wal` (default `data/exch.wal`). JSONL, one object per line, `fs
 
 | `type` | Fields |
 |---|---|
-| `cmd` | `seq`, `op` (`limit`\|`cancel`), `side`, `price`, `qty`, `oid` |
-| `rsp` | `seq`, `ok`, `oid`, `filled`, `rest`, `unrested` |
-| `fill` | `seq`, `maker`, `taker`, `price`, `qty` |
+| `instrument` | `name` (ticker), `id` (dense integer). Written once on first intern. No `seq`. |
+| `cmd` | `seq`, `pipe`, `op` (`limit`\|`cancel`), `symbol` (int), `side`, `price`, `qty`, `oid` |
+| `rsp` | `seq`, `pipe`, `ok`, `oid`, `filled`, `rest`, `unrested` |
+| `fill` | `seq`, `pipe`, `maker`, `taker`, `price`, `qty` |
 
-`seq` is monotonic from 1, one per inbound mutating command. `BBO` does not bump seq and is not logged.
+`seq` is per pipe, one per inbound mutating command. `BBO` does not bump seq and is not logged. Replay binds `instrument` rows first (file order), reserves every `cmd.symbol`, then applies cmds. Tickers never appear on `cmd`.
 
 **Replay:** read the file, apply only `cmd` records to a new `Book`, then append new cmds. Do not write the WAL during replay.
 

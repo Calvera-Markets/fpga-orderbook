@@ -16,6 +16,9 @@ class Venue:
             self.books[symbol] = Book()
         return self.books[symbol]
 
+    def try_book(self, symbol: int) -> Book | None:
+        return self.books.get(symbol)
+
     def _track(self, symbol: int, oid: int, rsp: BookRsp) -> BookRsp:
         if rsp.rest_qty > 0:
             self.oids.insert(oid, symbol)

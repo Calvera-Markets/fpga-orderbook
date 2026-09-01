@@ -11,7 +11,6 @@ if str(_GOLDEN) not in sys.path:
 
 from book import SIDE_BUY, SIDE_SELL, Book, BookRsp, Fill  # noqa: E402
 
-from instruments import Instruments
 from merge import with_pipe
 
 
@@ -19,7 +18,7 @@ class ParseError(Exception):
     pass
 
 
-def parse(line: str, instruments: Instruments | None = None) -> tuple:
+def parse(line: str) -> tuple:
     parts = line.split()
     if not parts:
         return ("empty",)
@@ -38,14 +37,7 @@ def parse(line: str, instruments: Instruments | None = None) -> tuple:
             price, qty, oid = int(parts[3]), int(parts[4]), int(parts[5])
         except ValueError as exc:
             raise ParseError("price, qty, oid must be integers") from exc
-        try:
-            if instruments is None:
-                symbol = int(parts[2])
-            else:
-                symbol = instruments.intern(parts[2])
-        except ValueError as exc:
-            raise ParseError("sym must be an integer or ticker") from exc
-        return ("limit", side, symbol, price, qty, oid)
+        return ("limit", side, parts[2], price, qty, oid)
     if op == "CANCEL":
         if len(parts) != 2:
             raise ParseError("usage: CANCEL <oid>")
@@ -58,21 +50,21 @@ def parse(line: str, instruments: Instruments | None = None) -> tuple:
         if len(parts) == 1:
             return ("bbo", None)
         if len(parts) == 2:
-            try:
-                if instruments is None:
-                    return ("bbo", int(parts[1]))
-                return ("bbo", instruments.intern(parts[1]))
-            except ValueError as exc:
-                raise ParseError("sym must be an integer or ticker") from exc
+            return ("bbo", parts[1])
         raise ParseError("usage: BBO [sym]")
     if op == "QUIT":
         return ("quit",)
     raise ParseError(f"unknown command {parts[0]!r}")
 
 
-def format_bbo(book: Book, symbol: int | None = None, label: str | None = None) -> str:
+def format_sides(book: Book) -> tuple[str, str]:
     bid = f"{book.bbo_bid_px}:{book.bbo_bid_qty}" if book.bbo_bid_valid else "-"
     ask = f"{book.bbo_ask_px}:{book.bbo_ask_qty}" if book.bbo_ask_valid else "-"
+    return bid, ask
+
+
+def format_bbo(book: Book, symbol: int | None = None, label: str | None = None) -> str:
+    bid, ask = format_sides(book)
     if symbol is None and label is None:
         return f"BBO bid={bid} ask={ask}"
     tag = label if label is not None else str(symbol)
