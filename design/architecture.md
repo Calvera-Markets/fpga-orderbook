@@ -61,9 +61,10 @@ exch-core/
   design/           this folder
   commands.md       commands used to build and test
   rtl/pkg/          SystemVerilog types and opcodes
-  rtl/book/         price-level FIFO + one-symbol book
+  rtl/book/         FIFO, one-symbol book, symbol_bank, partitioned_engine, oid_map
   tb/               Verilator C++ testbenches
-  sw/golden/        Python reference with the same semantics
+  sw/golden/        Python reference (Book, Venue, PartitionedVenue)
+  sw/gateway/       text protocol, WAL, replay (partitioned Python backend)
   obj_dir/          Verilator build output (generated, gitignored)
 ```
 

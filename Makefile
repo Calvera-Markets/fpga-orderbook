@@ -28,7 +28,7 @@ help:
 	@echo "make sim-bank  multi-symbol bank (one pipe)"
 	@echo "make sim-part  partitioned engine (K pipes)"
 	@echo "make sim       all RTL benches"
-	@echo "make test      golden + sim"
+	@echo "make test      golden + all RTL sims"
 	@echo "make run       interactive mini-exchange (stdin, WAL at data/exch.wal)"
 	@echo "make clean     remove obj_dir"
 

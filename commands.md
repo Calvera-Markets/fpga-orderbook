@@ -8,12 +8,20 @@ From the repo root (`/Users/boavida/Documents/programs/exch-core`):
 
 ```sh
 make help       # list targets
-make golden     # Python golden-model tests (FIFO + book, no Verilator)
+make golden     # Python tests: FIFO + book + venue + partition + gateway
 make sim-fifo   # price-level FIFO Verilator bench
 make sim-book   # one-symbol book Verilator bench
-make sim        # both RTL benches
+make sim-bank   # multi-symbol bank (one pipe)
+make sim-part   # partitioned engine (K=2 pipes)
+make sim        # all RTL benches
 make test       # golden + sim
+make run        # interactive mini-exchange (WAL data/exch.wal)
 make clean      # remove obj_dir/
+```
+
+```sh
+python3 sw/gateway/main.py --wal data/exch.wal
+# then e.g. LIMIT BUY 1 100 10 1
 ```
 
 Direct equivalents:
@@ -114,3 +122,26 @@ kaizu git remote -v
 ```
 
 Last successful `make test`: 21 Python tests OK, FIFO `PASSED 192 checks`, book `PASSED 125 checks`.
+
+## Session log — 2026-08-31 software mini-exchange
+
+```sh
+cd /Users/boavida/Documents/programs/exch-core
+python3 -m unittest discover -s sw/gateway -v
+printf '%s\n' 'LIMIT BUY 100 10 1' 'LIMIT SELL 100 4 2' 'BBO' 'QUIT' \
+  | python3 sw/gateway/main.py --wal /tmp/exch-core-smoke.wal
+printf '%s\n' 'BBO' 'QUIT' | python3 sw/gateway/main.py --wal /tmp/exch-core-smoke.wal
+make golden
+```
+
+Gateway: 6 tests OK. Smoke: sell 4 vs bid 10 fills; restart prints `BBO bid=100:6 ask=-`. `make golden`: 21 book/FIFO + 6 gateway tests OK.
+
+## Session log — 2026-09-01 Pattern 4
+
+```sh
+make golden
+make sim-bank    # PASSED 23 checks
+make sim-part    # parallel_issue gap_cycles=1; PASSED 34 checks
+```
+
+Commits: `pattern4 spec` … `rtl oid map` (see design/pattern-4-checkpoints.md).
