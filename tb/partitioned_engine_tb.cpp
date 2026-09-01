@@ -92,21 +92,25 @@ struct Rsp {
   uint32_t rest;
 };
 
-void fire(uint16_t symbol, uint8_t op, uint8_t side, uint32_t price, uint32_t qty,
-          uint64_t oid) {
-  top->cmd_symbol = symbol;
-  int guard = 0;
-  while (!top->cmd_ready && guard++ < 10000) {
-    tick();
-  }
-  expect(top->cmd_ready, "cmd_ready before fire");
-  top->cmd_valid = 1;
+void present(uint16_t symbol, uint8_t op, uint8_t side, uint32_t price, uint32_t qty,
+             uint64_t oid) {
   top->cmd_symbol = symbol;
   top->cmd_op = op;
   top->cmd_side = side;
   top->cmd_price = price;
   top->cmd_qty = qty;
   top->cmd_oid = oid;
+}
+
+void fire(uint16_t symbol, uint8_t op, uint8_t side, uint32_t price, uint32_t qty,
+          uint64_t oid) {
+  present(symbol, op, side, price, qty, oid);
+  int guard = 0;
+  while (!top->cmd_ready && guard++ < 10000) {
+    tick();
+  }
+  expect(top->cmd_ready, "cmd_ready before fire");
+  top->cmd_valid = 1;
   tick();
   top->cmd_valid = 0;
 }
@@ -173,7 +177,7 @@ void test_parallel_issue() {
   fills.clear();
   fire(0, BOOK_LIMIT, SIDE_BUY, 100, 10, 3);
   int start = cycles;
-  top->cmd_symbol = 1;
+  present(1, BOOK_LIMIT, SIDE_BUY, 100, 10, 4);
   top->eval();
   expect(top->cmd_ready, "pipe 1 ready while pipe 0 matching");
   fire(1, BOOK_LIMIT, SIDE_BUY, 100, 10, 4);
@@ -213,7 +217,7 @@ void test_parallel_high_pipe() {
   fills.clear();
   fire(0, BOOK_LIMIT, SIDE_BUY, 100, 10, 3);
   int start = cycles;
-  top->cmd_symbol = hi;
+  present(static_cast<uint16_t>(hi), BOOK_LIMIT, SIDE_BUY, 100, 10, 4);
   top->eval();
   expect(top->cmd_ready, "high pipe ready while pipe 0 matching");
   fire(static_cast<uint16_t>(hi), BOOK_LIMIT, SIDE_BUY, 100, 10, 4);
@@ -256,6 +260,69 @@ void test_all_pipes() {
   }
 }
 
+void test_bid_ask_issue() {
+  reset();
+  fire(0, BOOK_LIMIT, SIDE_BUY, 99, 10, 1);
+  int start = cycles;
+  present(0, BOOK_LIMIT, SIDE_SELL, 101, 7, 2);
+  top->eval();
+  expect(top->cmd_ready, "ask ready while same-symbol bid resting");
+  fire(0, BOOK_LIMIT, SIDE_SELL, 101, 7, 2);
+  int gap = cycles - start;
+  expect(gap <= 4, "opposite-side rest without waiting for first");
+  bool got1 = false;
+  bool got2 = false;
+  Rsp r1{};
+  Rsp r2{};
+  int guard = 0;
+  while ((!got1 || !got2) && guard++ < 10000) {
+    if ((top->rsp_valid >> 0) & 1) {
+      if (top->rsp_oid[0] == 1) {
+        got1 = true;
+        r1.ok = (top->rsp_ok >> 0) & 1;
+        r1.rest = top->rsp_rest_qty[0];
+      }
+      if (top->rsp_oid[0] == 2) {
+        got2 = true;
+        r2.ok = (top->rsp_ok >> 0) & 1;
+        r2.rest = top->rsp_rest_qty[0];
+      }
+    }
+    if (!got1 || !got2) {
+      tick();
+    }
+  }
+  expect(got1 && got2, "both sides responded");
+  expect(r1.ok && r2.ok, "both rests ok");
+  expect_eq_u64(r1.rest, 10, "bid rest qty");
+  expect_eq_u64(r2.rest, 7, "ask rest qty");
+  std::cout << "bid_ask_issue gap_cycles=" << gap << "\n";
+}
+
+void test_same_side_fifo_not_ready() {
+  reset();
+  fire(0, BOOK_LIMIT, SIDE_BUY, 99, 10, 1);
+  present(0, BOOK_LIMIT, SIDE_BUY, 98, 5, 2);
+  top->eval();
+  expect(!top->cmd_ready, "same-side bid waits");
+  Rsp r = wait_pipe(0);
+  expect(r.ok, "first bid rest");
+  r = issue(0, BOOK_LIMIT, SIDE_BUY, 98, 5, 3);
+  expect(r.ok, "second bid rest");
+}
+
+void test_cross_waits_inflight() {
+  reset();
+  fire(0, BOOK_LIMIT, SIDE_SELL, 100, 10, 1);
+  present(0, BOOK_LIMIT, SIDE_BUY, 100, 10, 2);
+  top->eval();
+  expect(!top->cmd_ready, "crossing buy waits for inflight ask");
+  Rsp r = wait_pipe(0);
+  expect(r.ok, "ask rested");
+  r = issue(0, BOOK_LIMIT, SIDE_BUY, 100, 10, 2);
+  expect_eq_u64(r.filled, 10, "buy matches after ask rest");
+}
+
 void test_high_local() {
   reset();
   // last valid: symbol = K*(N-1) → pipe 0, local N-1
@@ -280,6 +347,9 @@ int main(int argc, char **argv) {
   test_cancel_without_symbol();
   test_parallel_issue();
   test_parallel_high_pipe();
+  test_bid_ask_issue();
+  test_same_side_fifo_not_ready();
+  test_cross_waits_inflight();
   test_all_pipes();
   test_high_local();
   delete top;

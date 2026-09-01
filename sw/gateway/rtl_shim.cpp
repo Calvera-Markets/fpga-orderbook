@@ -98,6 +98,11 @@ int pe_issue(void *p, uint16_t symbol, uint8_t op, uint8_t side, uint32_t price,
   auto *h = static_cast<Handle *>(p);
   h->fills.clear();
   h->top->cmd_symbol = symbol;
+  h->top->cmd_op = op;
+  h->top->cmd_side = side;
+  h->top->cmd_price = price;
+  h->top->cmd_qty = qty;
+  h->top->cmd_oid = oid;
   int guard = 0;
   while (!h->top->cmd_ready && guard++ < MAX_TICKS) {
     tick(h);
@@ -106,12 +111,6 @@ int pe_issue(void *p, uint16_t symbol, uint8_t op, uint8_t side, uint32_t price,
     return -1;
   }
   h->top->cmd_valid = 1;
-  h->top->cmd_symbol = symbol;
-  h->top->cmd_op = op;
-  h->top->cmd_side = side;
-  h->top->cmd_price = price;
-  h->top->cmd_qty = qty;
-  h->top->cmd_oid = oid;
   tick(h);
   h->top->cmd_valid = 0;
 

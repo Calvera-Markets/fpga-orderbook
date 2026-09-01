@@ -1,6 +1,7 @@
 `default_nettype none
 
 // One-symbol price-time book. Spec: design/one-symbol-book.md
+// Pattern 2: bid rest ∥ ask rest; crossing LIMIT and CANCEL take both sides.
 module one_symbol_book
   import exch_pkg::*;
 (
@@ -29,6 +30,8 @@ module one_symbol_book
   output logic [PRICE_W-1:0] evt_price,
   output logic [QTY_W-1:0]   evt_qty,
 
+  output wire                idle,
+
   output wire                bbo_bid_valid,
   output wire [PRICE_W-1:0]  bbo_bid_px,
   output wire [QTY_W-1:0]    bbo_bid_qty,
@@ -49,9 +52,7 @@ module one_symbol_book
     ST_DONE         = 4'd8
   } state_e;
 
-  state_e state;
-
-  assign cmd_ready = (state == ST_IDLE) && rst_n;
+  state_e taker, bid_st, ask_st;
 
   logic [N_LEVELS-1:0] bid_used, ask_used;
   logic [PRICE_W-1:0]  bid_px [N_LEVELS];
@@ -60,8 +61,8 @@ module one_symbol_book
   logic [N_LEVELS-1:0] bid_cmd_valid, ask_cmd_valid;
   logic [1:0]          bid_cmd_op [N_LEVELS];
   logic [1:0]          ask_cmd_op [N_LEVELS];
-  logic [OID_W-1:0]    fifo_oid;
-  logic [QTY_W-1:0]    fifo_qty;
+  logic [OID_W-1:0]    bid_fifo_oid, ask_fifo_oid;
+  logic [QTY_W-1:0]    bid_fifo_qty, ask_fifo_qty;
 
   logic [N_LEVELS-1:0] bid_rsp_valid, ask_rsp_valid;
   logic [N_LEVELS-1:0] bid_rsp_ok, ask_rsp_ok;
@@ -92,8 +93,8 @@ module one_symbol_book
         .cmd_valid (bid_cmd_valid[gi]),
         .cmd_ready (bid_cmd_ready[gi]),
         .cmd_op    (bid_cmd_op[gi]),
-        .cmd_oid   (fifo_oid),
-        .cmd_qty   (fifo_qty),
+        .cmd_oid   (bid_fifo_oid),
+        .cmd_qty   (bid_fifo_qty),
         .rsp_valid (bid_rsp_valid[gi]),
         .rsp_ok    (bid_rsp_ok[gi]),
         .rsp_oid   (bid_rsp_oid[gi]),
@@ -112,8 +113,8 @@ module one_symbol_book
         .cmd_valid (ask_cmd_valid[gi]),
         .cmd_ready (ask_cmd_ready[gi]),
         .cmd_op    (ask_cmd_op[gi]),
-        .cmd_oid   (fifo_oid),
-        .cmd_qty   (fifo_qty),
+        .cmd_oid   (ask_fifo_oid),
+        .cmd_qty   (ask_fifo_qty),
         .rsp_valid (ask_rsp_valid[gi]),
         .rsp_ok    (ask_rsp_ok[gi]),
         .rsp_oid   (ask_rsp_oid[gi]),
@@ -181,8 +182,20 @@ module one_symbol_book
   logic               rest_is_ask;
   logic [LVL_IDX_W-1:0] rest_idx_r;
 
+  logic [PRICE_W-1:0] bid_px_l, ask_px_l;
+  logic [OID_W-1:0]   bid_oid_l, ask_oid_l;
+  logic [QTY_W-1:0]   bid_qty_l, ask_qty_l;
+  logic [QTY_W-1:0]   bid_rest_acc, ask_rest_acc;
+  logic [QTY_W-1:0]   bid_unrested, ask_unrested;
+  logic               bid_ok_l, ask_ok_l;
+  logic [LVL_IDX_W-1:0] bid_rest_idx_r, ask_rest_idx_r;
+
   logic               rest_found, rest_alloc;
   logic [LVL_IDX_W-1:0] rest_idx;
+  logic               rest_found_bid, rest_alloc_bid;
+  logic [LVL_IDX_W-1:0] rest_idx_bid;
+  logic               rest_found_ask, rest_alloc_ask;
+  logic [LVL_IDX_W-1:0] rest_idx_ask;
 
   always_comb begin
     rest_found = 1'b0;
@@ -225,9 +238,73 @@ module one_symbol_book
     end
   end
 
-  wire limit_crosses_now = (cmd_side == SIDE_BUY)
+  always_comb begin
+    rest_found_bid = 1'b0;
+    rest_alloc_bid = 1'b0;
+    rest_idx_bid   = '0;
+    for (int i = 0; i < N_LEVELS; i++) begin
+      if (bid_used[i] && bid_px[i] == bid_px_l) begin
+        rest_found_bid = 1'b1;
+        rest_alloc_bid = 1'b0;
+        rest_idx_bid   = LVL_IDX_W'(i);
+      end
+    end
+    if (!rest_found_bid) begin
+      for (int i = 0; i < N_LEVELS; i++) begin
+        if (!rest_found_bid && !bid_used[i]) begin
+          rest_found_bid = 1'b1;
+          rest_alloc_bid = 1'b1;
+          rest_idx_bid   = LVL_IDX_W'(i);
+        end
+      end
+    end
+  end
+
+  always_comb begin
+    rest_found_ask = 1'b0;
+    rest_alloc_ask = 1'b0;
+    rest_idx_ask   = '0;
+    for (int i = 0; i < N_LEVELS; i++) begin
+      if (ask_used[i] && ask_px[i] == ask_px_l) begin
+        rest_found_ask = 1'b1;
+        rest_alloc_ask = 1'b0;
+        rest_idx_ask   = LVL_IDX_W'(i);
+      end
+    end
+    if (!rest_found_ask) begin
+      for (int i = 0; i < N_LEVELS; i++) begin
+        if (!rest_found_ask && !ask_used[i]) begin
+          rest_found_ask = 1'b1;
+          rest_alloc_ask = 1'b1;
+          rest_idx_ask   = LVL_IDX_W'(i);
+        end
+      end
+    end
+  end
+
+  wire bid_rest_busy = (bid_st != ST_IDLE);
+  wire ask_rest_busy = (ask_st != ST_IDLE);
+  wire taker_idle    = (taker == ST_IDLE);
+  wire both_idle     = (bid_st == ST_IDLE) && (ask_st == ST_IDLE) && taker_idle;
+
+  assign idle = both_idle;
+
+  wire crosses_bbo = (cmd_side == SIDE_BUY)
       ? (bbo_ask_valid_c && cmd_price >= bbo_ask_px_c)
       : (bbo_bid_valid_c && cmd_price <= bbo_bid_px_c);
+  wire crosses_inflight = (cmd_side == SIDE_BUY)
+      ? (ask_rest_busy && cmd_price >= ask_px_l)
+      : (bid_rest_busy && cmd_price <= bid_px_l);
+  wire would_cross = crosses_bbo || crosses_inflight;
+
+  wire side_idle = (cmd_side == SIDE_BUY) ? (bid_st == ST_IDLE) : (ask_st == ST_IDLE);
+  wire rest_ready = side_idle && taker_idle && !would_cross;
+
+  assign cmd_ready = rst_n && (
+      (cmd_op == BOOK_CANCEL) ? both_idle :
+      (cmd_op == BOOK_LIMIT && would_cross) ? both_idle :
+      (cmd_op == BOOK_LIMIT) ? rest_ready :
+      both_idle);
 
   wire latched_crosses = (latched_side == SIDE_BUY)
       ? (bbo_ask_valid_c && latched_px >= bbo_ask_px_c)
@@ -235,6 +312,8 @@ module one_symbol_book
 
   wire rest_level_full = rest_found && !rest_alloc &&
       ((latched_side == SIDE_BUY) ? bid_full[rest_idx] : ask_full[rest_idx]);
+  wire rest_full_bid = rest_found_bid && !rest_alloc_bid && bid_full[rest_idx_bid];
+  wire rest_full_ask = rest_found_ask && !rest_alloc_ask && ask_full[rest_idx_ask];
 
   wire sel_rsp_valid = match_is_ask ? ask_rsp_valid[match_idx] : bid_rsp_valid[match_idx];
   wire sel_rsp_ok    = match_is_ask ? ask_rsp_ok[match_idx]    : bid_rsp_ok[match_idx];
@@ -245,6 +324,12 @@ module one_symbol_book
   wire rest_rsp_valid = rest_is_ask ? ask_rsp_valid[rest_idx_r] : bid_rsp_valid[rest_idx_r];
   wire rest_rsp_ok    = rest_is_ask ? ask_rsp_ok[rest_idx_r]    : bid_rsp_ok[rest_idx_r];
   wire rest_empty     = rest_is_ask ? ask_empty[rest_idx_r]     : bid_empty[rest_idx_r];
+  wire bid_rest_rsp_v = bid_rsp_valid[bid_rest_idx_r];
+  wire bid_rest_rsp_ok = bid_rsp_ok[bid_rest_idx_r];
+  wire bid_rest_empty = bid_empty[bid_rest_idx_r];
+  wire ask_rest_rsp_v = ask_rsp_valid[ask_rest_idx_r];
+  wire ask_rest_rsp_ok = ask_rsp_ok[ask_rest_idx_r];
+  wire ask_rest_empty = ask_empty[ask_rest_idx_r];
 
   always_comb begin
     for (int i = 0; i < N_LEVELS; i++) begin
@@ -253,9 +338,11 @@ module one_symbol_book
       bid_cmd_op[i]    = OP_NOP;
       ask_cmd_op[i]    = OP_NOP;
     end
-    fifo_oid = latched_oid;
-    fifo_qty = remaining;
-    unique case (state)
+    bid_fifo_oid = (taker != ST_IDLE) ? latched_oid : bid_oid_l;
+    ask_fifo_oid = (taker != ST_IDLE) ? latched_oid : ask_oid_l;
+    bid_fifo_qty = (taker != ST_IDLE) ? remaining   : bid_qty_l;
+    ask_fifo_qty = (taker != ST_IDLE) ? remaining   : ask_qty_l;
+    unique case (taker)
       ST_ISSUE_MATCH: begin
         if (latched_side == SIDE_BUY) begin
           ask_cmd_valid[best_ask_idx] = 1'b1;
@@ -277,7 +364,8 @@ module one_symbol_book
         end
       end
       ST_ISSUE_CANCEL: begin
-        fifo_qty = '0;
+        bid_fifo_qty = '0;
+        ask_fifo_qty = '0;
         for (int i = 0; i < N_LEVELS; i++) begin
           bid_cmd_valid[i] = 1'b1;
           ask_cmd_valid[i] = 1'b1;
@@ -286,13 +374,23 @@ module one_symbol_book
         end
       end
       default: begin
+        if (bid_st == ST_ISSUE_REST && rest_found_bid && !rest_full_bid) begin
+          bid_cmd_valid[rest_idx_bid] = 1'b1;
+          bid_cmd_op[rest_idx_bid]    = OP_ADD;
+        end
+        if (ask_st == ST_ISSUE_REST && rest_found_ask && !rest_full_ask) begin
+          ask_cmd_valid[rest_idx_ask] = 1'b1;
+          ask_cmd_op[rest_idx_ask]    = OP_ADD;
+        end
       end
     endcase
   end
 
   always_ff @(posedge clk) begin
     if (!rst_n) begin
-      state          <= ST_IDLE;
+      taker          <= ST_IDLE;
+      bid_st         <= ST_IDLE;
+      ask_st         <= ST_IDLE;
       bid_used       <= '0;
       ask_used       <= '0;
       for (int i = 0; i < N_LEVELS; i++) begin
@@ -311,6 +409,20 @@ module one_symbol_book
       match_px       <= '0;
       rest_is_ask    <= 1'b0;
       rest_idx_r     <= '0;
+      bid_px_l       <= '0;
+      ask_px_l       <= '0;
+      bid_oid_l      <= '0;
+      ask_oid_l      <= '0;
+      bid_qty_l      <= '0;
+      ask_qty_l      <= '0;
+      bid_rest_acc   <= '0;
+      ask_rest_acc   <= '0;
+      bid_unrested   <= '0;
+      ask_unrested   <= '0;
+      bid_ok_l       <= 1'b1;
+      ask_ok_l       <= 1'b1;
+      bid_rest_idx_r <= '0;
+      ask_rest_idx_r <= '0;
       rsp_valid      <= 1'b0;
       rsp_ok         <= 1'b0;
       rsp_oid        <= '0;
@@ -330,32 +442,69 @@ module one_symbol_book
         evt_valid <= 1'b0;
       end
 
-      unique case (state)
-        ST_IDLE: begin
-          if (cmd_valid) begin
-            latched_side <= cmd_side;
-            latched_px   <= cmd_price;
-            latched_oid  <= cmd_oid;
-            remaining    <= cmd_qty;
-            filled_acc   <= '0;
-            rest_acc     <= '0;
-            unrested_acc <= '0;
-            rsp_ok       <= 1'b1;
-            if (cmd_op == BOOK_CANCEL) begin
-              remaining <= '0;
-              state     <= ST_ISSUE_CANCEL;
-            end else if (cmd_op == BOOK_LIMIT && cmd_qty == '0) begin
-              rsp_ok <= 1'b0;
-              state  <= ST_DONE;
-            end else if (cmd_op == BOOK_LIMIT && limit_crosses_now) begin
-              state <= ST_ISSUE_MATCH;
-            end else if (cmd_op == BOOK_LIMIT) begin
-              state <= ST_ISSUE_REST;
-            end else begin
-              rsp_ok <= 1'b0;
-              state  <= ST_DONE;
-            end
+      if (cmd_valid && cmd_ready) begin
+        if (cmd_op == BOOK_CANCEL) begin
+          latched_side <= cmd_side;
+          latched_px   <= cmd_price;
+          latched_oid  <= cmd_oid;
+          remaining    <= '0;
+          filled_acc   <= '0;
+          rest_acc     <= '0;
+          unrested_acc <= '0;
+          rsp_ok       <= 1'b1;
+          taker        <= ST_ISSUE_CANCEL;
+        end else if (cmd_op == BOOK_LIMIT && cmd_qty == '0) begin
+          if (cmd_side == SIDE_BUY) begin
+            bid_oid_l    <= cmd_oid;
+            bid_ok_l     <= 1'b0;
+            bid_rest_acc <= '0;
+            bid_unrested <= '0;
+            bid_st       <= ST_DONE;
+          end else begin
+            ask_oid_l    <= cmd_oid;
+            ask_ok_l     <= 1'b0;
+            ask_rest_acc <= '0;
+            ask_unrested <= '0;
+            ask_st       <= ST_DONE;
           end
+        end else if (cmd_op == BOOK_LIMIT && would_cross) begin
+          latched_side <= cmd_side;
+          latched_px   <= cmd_price;
+          latched_oid  <= cmd_oid;
+          remaining    <= cmd_qty;
+          filled_acc   <= '0;
+          rest_acc     <= '0;
+          unrested_acc <= '0;
+          rsp_ok       <= 1'b1;
+          taker        <= ST_ISSUE_MATCH;
+        end else if (cmd_op == BOOK_LIMIT && cmd_side == SIDE_BUY) begin
+          bid_px_l     <= cmd_price;
+          bid_oid_l    <= cmd_oid;
+          bid_qty_l    <= cmd_qty;
+          bid_ok_l     <= 1'b1;
+          bid_rest_acc <= '0;
+          bid_unrested <= '0;
+          bid_st       <= ST_ISSUE_REST;
+        end else if (cmd_op == BOOK_LIMIT && cmd_side == SIDE_SELL) begin
+          ask_px_l     <= cmd_price;
+          ask_oid_l    <= cmd_oid;
+          ask_qty_l    <= cmd_qty;
+          ask_ok_l     <= 1'b1;
+          ask_rest_acc <= '0;
+          ask_unrested <= '0;
+          ask_st       <= ST_ISSUE_REST;
+        end else begin
+          latched_oid  <= cmd_oid;
+          filled_acc   <= '0;
+          rest_acc     <= '0;
+          unrested_acc <= '0;
+          rsp_ok       <= 1'b0;
+          taker        <= ST_DONE;
+        end
+      end
+
+      unique case (taker)
+        ST_IDLE: begin
         end
         ST_ISSUE_MATCH: begin
           match_is_ask <= (latched_side == SIDE_BUY);
@@ -366,7 +515,7 @@ module one_symbol_book
             match_idx <= best_bid_idx;
             match_px  <= bbo_bid_px_c;
           end
-          state <= ST_WAIT_MATCH;
+          taker <= ST_WAIT_MATCH;
         end
         ST_WAIT_MATCH: begin
           if (sel_rsp_valid) begin
@@ -382,21 +531,21 @@ module one_symbol_book
                 if (match_is_ask) ask_used[match_idx] <= 1'b0;
                 else              bid_used[match_idx] <= 1'b0;
               end
-              state <= ST_DECIDE;
+              taker <= ST_DECIDE;
             end else begin
               rsp_ok <= 1'b0;
-              state  <= ST_DONE;
+              taker  <= ST_DONE;
             end
           end
         end
         ST_DECIDE: begin
           if (!(evt_valid && !evt_ready)) begin
             if (remaining == '0) begin
-              state <= ST_DONE;
+              taker <= ST_DONE;
             end else if (latched_crosses) begin
-              state <= ST_ISSUE_MATCH;
+              taker <= ST_ISSUE_MATCH;
             end else begin
-              state <= ST_ISSUE_REST;
+              taker <= ST_ISSUE_REST;
             end
           end
         end
@@ -404,7 +553,7 @@ module one_symbol_book
           if (!rest_found || rest_level_full) begin
             unrested_acc <= remaining;
             rsp_ok       <= 1'b0;
-            state        <= ST_DONE;
+            taker        <= ST_DONE;
           end else begin
             rest_idx_r  <= rest_idx;
             rest_is_ask <= (latched_side == SIDE_SELL);
@@ -417,7 +566,7 @@ module one_symbol_book
                 ask_px[rest_idx]   <= latched_px;
               end
             end
-            state <= ST_WAIT_REST;
+            taker <= ST_WAIT_REST;
           end
         end
         ST_WAIT_REST: begin
@@ -432,11 +581,11 @@ module one_symbol_book
                 else             bid_used[rest_idx_r] <= 1'b0;
               end
             end
-            state <= ST_DONE;
+            taker <= ST_DONE;
           end
         end
         ST_ISSUE_CANCEL: begin
-          state <= ST_WAIT_CANCEL;
+          taker <= ST_WAIT_CANCEL;
         end
         ST_WAIT_CANCEL: begin
           rsp_ok   <= 1'b0;
@@ -453,7 +602,7 @@ module one_symbol_book
               if (ask_empty[i]) ask_used[i] <= 1'b0;
             end
           end
-          state <= ST_DONE;
+          taker <= ST_DONE;
         end
         ST_DONE: begin
           rsp_valid        <= 1'b1;
@@ -461,9 +610,95 @@ module one_symbol_book
           rsp_filled_qty   <= filled_acc;
           rsp_rest_qty     <= rest_acc;
           rsp_unrested_qty <= unrested_acc;
-          state            <= ST_IDLE;
+          taker            <= ST_IDLE;
         end
-        default: state <= ST_IDLE;
+        default: taker <= ST_IDLE;
+      endcase
+
+      unique case (bid_st)
+        ST_IDLE: begin
+        end
+        ST_ISSUE_REST: begin
+          if (!rest_found_bid || rest_full_bid) begin
+            bid_unrested <= bid_qty_l;
+            bid_ok_l     <= 1'b0;
+            bid_st       <= ST_DONE;
+          end else begin
+            bid_rest_idx_r <= rest_idx_bid;
+            if (rest_alloc_bid) begin
+              bid_used[rest_idx_bid] <= 1'b1;
+              bid_px[rest_idx_bid]   <= bid_px_l;
+            end
+            bid_st <= ST_WAIT_REST;
+          end
+        end
+        ST_WAIT_REST: begin
+          if (bid_rest_rsp_v) begin
+            if (bid_rest_rsp_ok) begin
+              bid_rest_acc <= bid_qty_l;
+            end else begin
+              bid_unrested <= bid_qty_l;
+              bid_ok_l     <= 1'b0;
+              if (bid_rest_empty) bid_used[bid_rest_idx_r] <= 1'b0;
+            end
+            bid_st <= ST_DONE;
+          end
+        end
+        ST_DONE: begin
+          if (taker != ST_DONE) begin
+            rsp_valid        <= 1'b1;
+            rsp_ok           <= bid_ok_l;
+            rsp_oid          <= bid_oid_l;
+            rsp_filled_qty   <= '0;
+            rsp_rest_qty     <= bid_rest_acc;
+            rsp_unrested_qty <= bid_unrested;
+            bid_st           <= ST_IDLE;
+          end
+        end
+        default: bid_st <= ST_IDLE;
+      endcase
+
+      unique case (ask_st)
+        ST_IDLE: begin
+        end
+        ST_ISSUE_REST: begin
+          if (!rest_found_ask || rest_full_ask) begin
+            ask_unrested <= ask_qty_l;
+            ask_ok_l     <= 1'b0;
+            ask_st       <= ST_DONE;
+          end else begin
+            ask_rest_idx_r <= rest_idx_ask;
+            if (rest_alloc_ask) begin
+              ask_used[rest_idx_ask] <= 1'b1;
+              ask_px[rest_idx_ask]   <= ask_px_l;
+            end
+            ask_st <= ST_WAIT_REST;
+          end
+        end
+        ST_WAIT_REST: begin
+          if (ask_rest_rsp_v) begin
+            if (ask_rest_rsp_ok) begin
+              ask_rest_acc <= ask_qty_l;
+            end else begin
+              ask_unrested <= ask_qty_l;
+              ask_ok_l     <= 1'b0;
+              if (ask_rest_empty) ask_used[ask_rest_idx_r] <= 1'b0;
+            end
+            ask_st <= ST_DONE;
+          end
+        end
+        ST_DONE: begin
+          if (taker != ST_DONE && bid_st != ST_DONE) begin
+            rsp_valid        <= 1'b1;
+            rsp_ok           <= ask_ok_l;
+            rsp_oid          <= ask_oid_l;
+            rsp_filled_qty   <= '0;
+            rsp_rest_qty     <= ask_rest_acc;
+            rsp_unrested_qty <= ask_unrested;
+            ask_st           <= ST_IDLE;
+          end
+        end
+        default: ask_st <= ST_IDLE;
       endcase
     end
   end

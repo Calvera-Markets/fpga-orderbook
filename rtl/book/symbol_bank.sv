@@ -1,6 +1,8 @@
 `default_nettype none
 
-// One Pattern-4 partition: N one_symbol_book instances, one in-flight command.
+// One Pattern-4 partition: N one_symbol_book instances.
+// One in-flight command per book except Pattern 2: bid rest ∥ ask rest on the same book.
+// Other books in the pipe still stall (no per-symbol scoreboard).
 // local = cmd_symbol / N_PIPES_P. Spec: design/pattern-4.md
 module symbol_bank
   import exch_pkg::*;
@@ -52,6 +54,7 @@ module symbol_bank
   wire [LOC_W-1:0] loc        = loc_full_w[LOC_W-1:0];
 
   logic [N_SYMS-1:0] book_ready;
+  logic [N_SYMS-1:0] book_idle;
   logic [N_SYMS-1:0] book_cmd_valid;
   logic [N_SYMS-1:0] book_rsp_valid, book_rsp_ok;
   logic [OID_W-1:0]  book_rsp_oid [N_SYMS];
@@ -69,12 +72,20 @@ module symbol_bank
   logic [PRICE_W-1:0] book_ask_px [N_SYMS];
   logic [QTY_W-1:0]  book_ask_qty [N_SYMS];
 
-  wire any_busy = ~(&book_ready);
+  logic other_busy;
+  always_comb begin
+    other_busy = 1'b0;
+    for (int i = 0; i < N_SYMS; i++) begin
+      if (in_range && (LOC_W'(i) != loc) && !book_idle[i]) begin
+        other_busy = 1'b1;
+      end
+    end
+  end
 
   logic nak_busy;
   logic [OID_W-1:0] nak_oid;
 
-  assign cmd_ready = rst_n && !nak_busy && (in_range ? (book_ready[loc] && !any_busy) : 1'b1);
+  assign cmd_ready = rst_n && !nak_busy && (in_range ? (book_ready[loc] && !other_busy) : 1'b1);
 
   genvar gi;
   generate
@@ -85,6 +96,7 @@ module symbol_bank
         .cmd_valid (book_cmd_valid[gi]),
         .cmd_ready (book_ready[gi]),
         .cmd_op, .cmd_side, .cmd_price, .cmd_qty, .cmd_oid,
+        .idle      (book_idle[gi]),
         .rsp_valid (book_rsp_valid[gi]),
         .rsp_ok    (book_rsp_ok[gi]),
         .rsp_oid   (book_rsp_oid[gi]),

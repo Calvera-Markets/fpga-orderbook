@@ -84,19 +84,18 @@ struct Rsp {
 Rsp issue(uint16_t symbol, uint8_t op, uint8_t side, uint32_t price, uint32_t qty,
           uint64_t oid) {
   fills.clear();
-  int guard = 0;
-  top->cmd_symbol = symbol;
-  while (!top->cmd_ready && guard++ < 10000) {
-    tick();
-  }
-  expect(top->cmd_ready, "cmd_ready");
-  top->cmd_valid = 1;
   top->cmd_symbol = symbol;
   top->cmd_op = op;
   top->cmd_side = side;
   top->cmd_price = price;
   top->cmd_qty = qty;
   top->cmd_oid = oid;
+  int guard = 0;
+  while (!top->cmd_ready && guard++ < 10000) {
+    tick();
+  }
+  expect(top->cmd_ready, "cmd_ready");
+  top->cmd_valid = 1;
   tick();
   top->cmd_valid = 0;
   guard = 0;

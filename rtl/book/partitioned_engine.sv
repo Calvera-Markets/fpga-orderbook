@@ -43,9 +43,11 @@ module partitioned_engine
   logic               wr_en, wr_clear;
   logic [OID_W-1:0]   wr_oid_r;
   logic [SYMBOL_W-1:0] wr_sym_r;
-  logic [OID_W-1:0]   last_oid [N_PIPES];
-  logic [SYMBOL_W-1:0] last_sym [N_PIPES];
-  logic               last_op  [N_PIPES];
+  // Two slots per pipe: LIMIT buy → 0, LIMIT sell → 1, CANCEL → 0 (exclusive).
+  logic [OID_W-1:0]   last_oid [N_PIPES][2];
+  logic [SYMBOL_W-1:0] last_sym [N_PIPES][2];
+  logic               last_op  [N_PIPES][2];
+  logic               last_v   [N_PIPES][2];
 
   wire [SYMBOL_W-1:0] route_sym =
       (cmd_op == BOOK_CANCEL && map_hit) ? map_sym : cmd_symbol;
@@ -65,17 +67,34 @@ module partitioned_engine
     .rd_symbol (map_sym)
   );
 
+  wire slot_sel = (cmd_op == BOOK_CANCEL) ? 1'b0 : cmd_side;
+
   always_ff @(posedge clk) begin
     if (!rst_n) begin
       for (int p = 0; p < N_PIPES; p++) begin
-        last_oid[p] <= '0;
-        last_sym[p] <= '0;
-        last_op[p]  <= BOOK_LIMIT;
+        for (int s = 0; s < 2; s++) begin
+          last_oid[p][s] <= '0;
+          last_sym[p][s] <= '0;
+          last_op[p][s]  <= BOOK_LIMIT;
+          last_v[p][s]   <= 1'b0;
+        end
       end
-    end else if (cmd_valid && cmd_ready) begin
-      last_oid[pipe_sel] <= cmd_oid;
-      last_sym[pipe_sel] <= route_sym;
-      last_op[pipe_sel]  <= cmd_op;
+    end else begin
+      for (int p = 0; p < N_PIPES; p++) begin
+        if (rsp_valid[p]) begin
+          for (int s = 0; s < 2; s++) begin
+            if (last_v[p][s] && last_oid[p][s] == rsp_oid[p]) begin
+              last_v[p][s] <= 1'b0;
+            end
+          end
+        end
+      end
+      if (cmd_valid && cmd_ready) begin
+        last_oid[pipe_sel][slot_sel] <= cmd_oid;
+        last_sym[pipe_sel][slot_sel] <= route_sym;
+        last_op[pipe_sel][slot_sel]  <= cmd_op;
+        last_v[pipe_sel][slot_sel]   <= 1'b1;
+      end
     end
   end
 
@@ -89,14 +108,20 @@ module partitioned_engine
       wr_en    <= 1'b0;
       wr_clear <= 1'b0;
       for (int p = 0; p < N_PIPES; p++) begin
-        if (rsp_valid[p] && last_op[p] == BOOK_LIMIT && rsp_rest_qty[p] != '0) begin
-          wr_en    <= 1'b1;
-          wr_oid_r <= last_oid[p];
-          wr_sym_r <= last_sym[p];
-        end
-        if (rsp_valid[p] && last_op[p] == BOOK_CANCEL && rsp_ok[p]) begin
-          wr_clear <= 1'b1;
-          wr_oid_r <= last_oid[p];
+        if (rsp_valid[p]) begin
+          for (int s = 0; s < 2; s++) begin
+            if (last_v[p][s] && last_oid[p][s] == rsp_oid[p]) begin
+              if (last_op[p][s] == BOOK_LIMIT && rsp_rest_qty[p] != '0) begin
+                wr_en    <= 1'b1;
+                wr_oid_r <= last_oid[p][s];
+                wr_sym_r <= last_sym[p][s];
+              end
+              if (last_op[p][s] == BOOK_CANCEL && rsp_ok[p]) begin
+                wr_clear <= 1'b1;
+                wr_oid_r <= last_oid[p][s];
+              end
+            end
+          end
         end
       end
     end

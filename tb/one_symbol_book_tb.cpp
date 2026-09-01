@@ -85,22 +85,28 @@ struct Rsp {
   uint32_t unrested;
 };
 
-Rsp issue(uint8_t op, uint8_t side, uint32_t price, uint32_t qty, uint64_t oid) {
-  fills.clear();
-  int guard = 0;
-  while (!top->cmd_ready && guard++ < 10000) {
-    tick();
-  }
-  expect(top->cmd_ready, "cmd_ready before issue");
-  top->cmd_valid = 1;
+void present(uint8_t op, uint8_t side, uint32_t price, uint32_t qty, uint64_t oid) {
   top->cmd_op = op;
   top->cmd_side = side;
   top->cmd_price = price;
   top->cmd_qty = qty;
   top->cmd_oid = oid;
+}
+
+void fire(uint8_t op, uint8_t side, uint32_t price, uint32_t qty, uint64_t oid) {
+  present(op, side, price, qty, oid);
+  int guard = 0;
+  while (!top->cmd_ready && guard++ < 10000) {
+    tick();
+  }
+  expect(top->cmd_ready, "cmd_ready before fire");
+  top->cmd_valid = 1;
   tick();
   top->cmd_valid = 0;
-  guard = 0;
+}
+
+Rsp wait_rsp() {
+  int guard = 0;
   while (!top->rsp_valid && guard++ < 10000) {
     tick();
   }
@@ -112,6 +118,12 @@ Rsp issue(uint8_t op, uint8_t side, uint32_t price, uint32_t qty, uint64_t oid) 
   r.rest = top->rsp_rest_qty;
   r.unrested = top->rsp_unrested_qty;
   return r;
+}
+
+Rsp issue(uint8_t op, uint8_t side, uint32_t price, uint32_t qty, uint64_t oid) {
+  fills.clear();
+  fire(op, side, price, qty, oid);
+  return wait_rsp();
 }
 
 Rsp limit(uint8_t side, uint32_t price, uint32_t qty, uint64_t oid) {
@@ -255,6 +267,70 @@ void test_same_price_bbo() {
   expect_bbo(1, 100, 17, 0, 0, 0, "agg bbo");
 }
 
+void test_bid_ask_parallel() {
+  reset();
+  fills.clear();
+  fire(BOOK_LIMIT, SIDE_BUY, 99, 10, 1);
+  present(BOOK_LIMIT, SIDE_SELL, 101, 7, 2);
+  top->eval();
+  expect(top->cmd_ready, "ask ready while bid resting");
+  fire(BOOK_LIMIT, SIDE_SELL, 101, 7, 2);
+  bool got1 = false;
+  bool got2 = false;
+  Rsp r1{};
+  Rsp r2{};
+  int guard = 0;
+  while ((!got1 || !got2) && guard++ < 10000) {
+    if (top->rsp_valid) {
+      if (top->rsp_oid == 1) {
+        got1 = true;
+        r1.ok = top->rsp_ok;
+        r1.rest = top->rsp_rest_qty;
+      }
+      if (top->rsp_oid == 2) {
+        got2 = true;
+        r2.ok = top->rsp_ok;
+        r2.rest = top->rsp_rest_qty;
+      }
+    }
+    if (!got1 || !got2) {
+      tick();
+    }
+  }
+  expect(got1 && got2, "both sides responded");
+  expect(r1.ok, "bid rest ok");
+  expect(r2.ok, "ask rest ok");
+  expect_eq_u64(r1.rest, 10, "bid rest qty");
+  expect_eq_u64(r2.rest, 7, "ask rest qty");
+  expect(fills.empty(), "no fills on dual rest");
+  expect_bbo(1, 99, 10, 1, 101, 7, "dual rest");
+}
+
+void test_same_side_serialized() {
+  reset();
+  fire(BOOK_LIMIT, SIDE_BUY, 99, 10, 1);
+  present(BOOK_LIMIT, SIDE_BUY, 98, 5, 2);
+  top->eval();
+  expect(!top->cmd_ready, "same-side bid waits");
+  Rsp r = wait_rsp();
+  expect(r.ok, "first bid rest");
+  r = issue(BOOK_LIMIT, SIDE_BUY, 98, 5, 2);
+  expect(r.ok, "second bid rest");
+  expect_bbo(1, 99, 10, 0, 0, 0, "two bids");
+}
+
+void test_cross_waits_for_inflight_ask() {
+  reset();
+  fire(BOOK_LIMIT, SIDE_SELL, 100, 10, 1);
+  present(BOOK_LIMIT, SIDE_BUY, 100, 10, 2);
+  top->eval();
+  expect(!top->cmd_ready, "crossing buy waits for inflight ask");
+  Rsp r = wait_rsp();
+  expect(r.ok, "ask rested");
+  r = issue(BOOK_LIMIT, SIDE_BUY, 100, 10, 2);
+  expect_eq_u64(r.filled, 10, "buy matches after ask rest");
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -271,6 +347,9 @@ int main(int argc, char **argv) {
   test_take_side_then_rest();
   test_sell_crosses_bid();
   test_same_price_bbo();
+  test_bid_ask_parallel();
+  test_same_side_serialized();
+  test_cross_waits_for_inflight_ask();
 
   delete top;
 
