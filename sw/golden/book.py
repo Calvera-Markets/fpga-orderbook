@@ -118,6 +118,13 @@ class Book:
             fills=fills,
         )
 
+    def has_oid(self, oid: int) -> bool:
+        for levels in (self.bids, self.asks):
+            for level in levels.values():
+                if any(order.oid == oid for order in level.slots):
+                    return True
+        return False
+
     def cancel(self, oid: int) -> BookRsp:
         for book in (self.bids, self.asks):
             for px, level in list(book.items()):

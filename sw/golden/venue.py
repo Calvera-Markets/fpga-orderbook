@@ -3,23 +3,37 @@
 from __future__ import annotations
 
 from book import Book, BookRsp
+from oid_map import OidMap
 
 
 class Venue:
     def __init__(self) -> None:
         self.books: dict[int, Book] = {}
+        self.oids = OidMap()
 
     def book(self, symbol: int) -> Book:
         if symbol not in self.books:
             self.books[symbol] = Book()
         return self.books[symbol]
 
+    def _track(self, symbol: int, oid: int, rsp: BookRsp) -> BookRsp:
+        if rsp.rest_qty > 0:
+            self.oids.insert(oid, symbol)
+        book = self.book(symbol)
+        for fill in rsp.fills:
+            if not book.has_oid(fill.maker_oid):
+                self.oids.remove(fill.maker_oid)
+        return rsp
+
     def limit(self, symbol: int, side: int, price: int, qty: int, oid: int) -> BookRsp:
-        return self.book(symbol).limit(side, price, qty, oid)
+        rsp = self.book(symbol).limit(side, price, qty, oid)
+        return self._track(symbol, oid, rsp)
 
     def cancel(self, oid: int) -> BookRsp:
-        for book in self.books.values():
-            rsp = book.cancel(oid)
-            if rsp.ok:
-                return rsp
-        return BookRsp(ok=False, oid=oid)
+        symbol = self.oids.get(oid)
+        if symbol is None:
+            return BookRsp(ok=False, oid=oid)
+        rsp = self.book(symbol).cancel(oid)
+        if rsp.ok:
+            self.oids.remove(oid)
+        return rsp
