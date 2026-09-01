@@ -34,13 +34,16 @@ def handle_line(exch: Exchange, line: str) -> str | None:
     if kind == "limit":
         _, side, symbol, price, qty, oid = cmd
         rsp = exch.limit(symbol, side, price, qty, oid)
-        return format_rsp(rsp, exch.venue.book(symbol), symbol)
+        return format_rsp(
+            rsp, exch.venue.book(symbol), symbol, exch.venue.pipe(symbol)
+        )
     if kind == "cancel":
         _, oid = cmd
         symbol = exch.venue.oids.get(oid)
         rsp = exch.cancel(oid)
         book = exch.venue.book(symbol) if symbol is not None else exch.venue.book(0)
-        return format_rsp(rsp, book, symbol)
+        pipe = exch.venue.pipe(symbol) if symbol is not None else None
+        return format_rsp(rsp, book, symbol, pipe)
     return "ERR internal\n"
 
 

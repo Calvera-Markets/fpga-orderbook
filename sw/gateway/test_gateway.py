@@ -86,7 +86,7 @@ class TestCli(unittest.TestCase):
             exch = Exchange(Path(tmp) / "exch.wal")
             out = handle_line(exch, "LIMIT BUY 1 100 10 1")
             assert out is not None
-            self.assertIn("OK oid=1 filled=0 rest=10", out)
+            self.assertIn("OK oid=1 filled=0 rest=10 unrested=0 pipe=1", out)
             self.assertIn("bid=100:10", out)
             out = handle_line(exch, "LIMIT SELL 1 100 10 2")
             assert out is not None

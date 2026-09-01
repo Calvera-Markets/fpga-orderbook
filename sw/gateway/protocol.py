@@ -11,6 +11,8 @@ if str(_GOLDEN) not in sys.path:
 
 from book import SIDE_BUY, SIDE_SELL, Book, BookRsp, Fill  # noqa: E402
 
+from merge import with_pipe
+
 
 class ParseError(Exception):
     pass
@@ -73,12 +75,20 @@ def format_fill(fill: Fill) -> str:
     )
 
 
-def format_rsp(rsp: BookRsp, book: Book, symbol: int | None = None) -> str:
+def format_rsp(
+    rsp: BookRsp,
+    book: Book,
+    symbol: int | None = None,
+    pipe: int | None = None,
+) -> str:
     lines = [format_fill(f) for f in rsp.fills]
     status = "OK" if rsp.ok else "NAK"
     lines.append(
-        f"{status} oid={rsp.oid} filled={rsp.filled_qty} "
-        f"rest={rsp.rest_qty} unrested={rsp.unrested_qty}"
+        with_pipe(
+            f"{status} oid={rsp.oid} filled={rsp.filled_qty} "
+            f"rest={rsp.rest_qty} unrested={rsp.unrested_qty}",
+            pipe,
+        )
     )
     lines.append(format_bbo(book, symbol))
     return "\n".join(lines) + "\n"

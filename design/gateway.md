@@ -33,8 +33,10 @@ Reply, in order:
 
 ```
 FILL maker=<id> taker=<id> price=<px> qty=<qty>     # zero or more
-OK|NAK oid=<id> filled=<n> rest=<n> unrested=<n>
-BBO bid=<px>:<qty>| -  ask=<px>:<qty>| -
+OK|NAK oid=<id> filled=<n> rest=<n> unrested=<n> pipe=<k>
+BBO [sym=<id>] bid=<px>:<qty>| -  ask=<px>:<qty>| -
+
+Match order is **per pipe**. The CLI prints replies in submit order. Two fills on different pipes have no venue-wide sequence.
 ```
 
 `NAK` is a rejected command (qty 0, unknown cancel, rest bound hit). Fills already produced still print first.
