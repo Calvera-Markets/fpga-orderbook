@@ -10,20 +10,22 @@ BOOK_BIN := $(BOOK_DIR)/$(BOOK_TOP)_sim
 
 VFLAGS := --cc --exe --build -sv -Wall -CFLAGS "-std=c++17 -Wall"
 
-.PHONY: all help golden sim sim-fifo sim-book test clean
+.PHONY: all help golden sim sim-fifo sim-book test clean run
 
 all: test
 
 help:
-	@echo "make golden    Python golden-model tests"
+	@echo "make golden    Python golden-model and gateway tests"
 	@echo "make sim-fifo  price-level FIFO Verilator bench"
 	@echo "make sim-book  one-symbol book Verilator bench"
 	@echo "make sim       both RTL benches"
 	@echo "make test      golden + sim"
+	@echo "make run       interactive mini-exchange (stdin, WAL at data/exch.wal)"
 	@echo "make clean     remove obj_dir"
 
 golden:
 	cd sw/golden && python3 -m unittest discover -v
+	cd sw/gateway && python3 -m unittest discover -v
 
 $(FIFO_BIN): $(COMMON_RTL) tb/price_level_fifo_tb.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $(FIFO_TOP) -Mdir $(FIFO_DIR) -o $(FIFO_TOP)_sim \
@@ -42,6 +44,9 @@ sim-book: $(BOOK_BIN)
 sim: sim-fifo sim-book
 
 test: golden sim
+
+run:
+	python3 sw/gateway/main.py --wal data/exch.wal
 
 clean:
 	rm -rf obj_dir
