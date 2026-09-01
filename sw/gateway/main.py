@@ -77,8 +77,19 @@ def handle_line(exch: Exchange, line: str) -> str | None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="exch-core software mini-exchange")
     parser.add_argument("--wal", default="data/exch.wal", help="WAL path (JSONL)")
+    parser.add_argument(
+        "--engine",
+        choices=("python", "rtl"),
+        default="python",
+        help="matching backend (python golden or Verilator partitioned_engine)",
+    )
     args = parser.parse_args(argv)
-    exch = Exchange(Path(args.wal))
+    engine = None
+    if args.engine == "rtl":
+        from rtl_engine import RtlEngine
+
+        engine = RtlEngine()
+    exch = Exchange(Path(args.wal), engine=engine)
     for raw in sys.stdin:
         out = handle_line(exch, raw)
         if out is None:

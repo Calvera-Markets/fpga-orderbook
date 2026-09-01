@@ -16,8 +16,15 @@ PART_BIN := $(PART_DIR)/$(PART_TOP)_sim
 BOOK_RTL := $(COMMON_RTL) rtl/book/one_symbol_book.sv
 
 VFLAGS := --cc --exe --build -sv -Wall -CFLAGS "-std=c++17 -Wall"
+VERILATOR_ROOT ?= $(shell $(VERILATOR) --getenv VERILATOR_ROOT)
+LIB_DIR := obj_dir/lib
+LIBPE := $(LIB_DIR)/libpe.so
+PART_RTL := $(BOOK_RTL) rtl/book/symbol_bank.sv rtl/book/oid_map.sv rtl/book/partitioned_engine.sv
+ifeq ($(shell uname),Darwin)
+LIBLDFLAGS := -Wl,-U,__Z15vl_time_stamp64v,-U,__Z13sc_time_stampv,-U,_vlog_startup_routines
+endif
 
-.PHONY: all help golden sim sim-fifo sim-book sim-bank sim-part test clean run
+.PHONY: all help golden sim sim-fifo sim-book sim-bank sim-part lib rtl-gw test clean run
 
 all: test
 
@@ -27,9 +34,10 @@ help:
 	@echo "make sim-book  one-symbol book Verilator bench"
 	@echo "make sim-bank  multi-symbol bank (one pipe)"
 	@echo "make sim-part  partitioned engine (K pipes)"
+	@echo "make lib       Verilator partitioned_engine as libpe.so (gateway --engine rtl)"
 	@echo "make sim       all RTL benches"
-	@echo "make test      golden + all RTL sims"
-	@echo "make run       interactive mini-exchange (stdin, WAL at data/exch.wal)"
+	@echo "make test      golden + all RTL sims + rtl gateway"
+	@echo "make run       interactive mini-exchange (Verilator engine, WAL data/exch.wal)"
 	@echo "make clean     remove obj_dir"
 
 golden:
@@ -48,9 +56,9 @@ $(BANK_BIN): $(BOOK_RTL) rtl/book/symbol_bank.sv tb/symbol_bank_tb.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $(BANK_TOP) -Mdir $(BANK_DIR) -o $(BANK_TOP)_sim \
 		$(BOOK_RTL) rtl/book/symbol_bank.sv tb/symbol_bank_tb.cpp
 
-$(PART_BIN): $(BOOK_RTL) rtl/book/symbol_bank.sv rtl/book/oid_map.sv rtl/book/partitioned_engine.sv tb/partitioned_engine_tb.cpp
+$(PART_BIN): $(PART_RTL) tb/partitioned_engine_tb.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $(PART_TOP) -Mdir $(PART_DIR) -o $(PART_TOP)_sim \
-		$(BOOK_RTL) rtl/book/symbol_bank.sv rtl/book/oid_map.sv rtl/book/partitioned_engine.sv tb/partitioned_engine_tb.cpp
+		$(PART_RTL) tb/partitioned_engine_tb.cpp
 
 sim-fifo: $(FIFO_BIN)
 	$(FIFO_BIN)
@@ -66,10 +74,25 @@ sim-part: $(PART_BIN)
 
 sim: sim-fifo sim-book sim-bank sim-part
 
-test: golden sim
+$(LIB_DIR)/Vpartitioned_engine.mk: $(PART_RTL)
+	$(VERILATOR) --cc --build -sv -Wall --top-module $(PART_TOP) -Mdir $(LIB_DIR) \
+		-CFLAGS "-std=c++17 -Wall -fPIC" $(PART_RTL)
 
-run:
-	python3 sw/gateway/main.py --wal data/exch.wal
+$(LIBPE): $(LIB_DIR)/Vpartitioned_engine.mk sw/gateway/rtl_shim.cpp
+	c++ -shared -fPIC -std=c++17 -Wall -o $(LIBPE) sw/gateway/rtl_shim.cpp \
+		-I$(LIB_DIR) -I$(VERILATOR_ROOT)/include -I$(VERILATOR_ROOT)/include/vltstd \
+		$(LIB_DIR)/Vpartitioned_engine__ALL.a $(LIB_DIR)/verilated.o $(LIB_DIR)/verilated_threads.o \
+		-pthread $(LIBLDFLAGS)
+
+lib: $(LIBPE)
+
+rtl-gw: $(LIBPE)
+	cd sw/gateway && python3 -m unittest test_rtl.py -v
+
+test: golden sim rtl-gw
+
+run: $(LIBPE)
+	python3 sw/gateway/main.py --wal data/exch.wal --engine rtl
 
 clean:
 	rm -rf obj_dir

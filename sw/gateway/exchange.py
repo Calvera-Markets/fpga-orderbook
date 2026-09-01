@@ -17,8 +17,8 @@ from wal import Wal
 
 
 class Exchange:
-    def __init__(self, wal_path: Path) -> None:
-        self.venue = PartitionedVenue()
+    def __init__(self, wal_path: Path, engine=None) -> None:
+        self.venue = engine if engine is not None else PartitionedVenue()
         self.instruments = Instruments()
         self.wal = Wal(wal_path)
         self._replay()

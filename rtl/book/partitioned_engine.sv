@@ -28,7 +28,14 @@ module partitioned_engine
   output logic [OID_W-1:0]   evt_maker_oid [N_PIPES],
   output logic [OID_W-1:0]   evt_taker_oid [N_PIPES],
   output logic [PRICE_W-1:0] evt_price [N_PIPES],
-  output logic [QTY_W-1:0]   evt_qty [N_PIPES]
+  output logic [QTY_W-1:0]   evt_qty [N_PIPES],
+
+  output logic [N_PIPES-1:0] bbo_bid_valid,
+  output logic [PRICE_W-1:0] bbo_bid_px [N_PIPES],
+  output logic [QTY_W-1:0]   bbo_bid_qty [N_PIPES],
+  output logic [N_PIPES-1:0] bbo_ask_valid,
+  output logic [PRICE_W-1:0] bbo_ask_px [N_PIPES],
+  output logic [QTY_W-1:0]   bbo_ask_qty [N_PIPES]
 );
 
   logic               map_hit;
@@ -99,11 +106,6 @@ module partitioned_engine
   generate
     for (gi = 0; gi < N_PIPES; gi++) begin : gen_pipes
       assign bank_cmd_valid[gi] = cmd_valid && cmd_ready && (pipe_sel == PIPE_W'(gi));
-      /* verilator lint_off UNUSEDSIGNAL */
-      logic unused_bid_v, unused_ask_v;
-      logic [PRICE_W-1:0] unused_bid_px, unused_ask_px;
-      logic [QTY_W-1:0] unused_bid_qty, unused_ask_qty;
-      /* verilator lint_on UNUSEDSIGNAL */
       symbol_bank #(
         .PIPE_ID   (gi),
         .N_PIPES_P (N_PIPES),
@@ -126,12 +128,12 @@ module partitioned_engine
         .evt_taker_oid (evt_taker_oid[gi]),
         .evt_price (evt_price[gi]),
         .evt_qty   (evt_qty[gi]),
-        .bbo_bid_valid (unused_bid_v),
-        .bbo_bid_px    (unused_bid_px),
-        .bbo_bid_qty   (unused_bid_qty),
-        .bbo_ask_valid (unused_ask_v),
-        .bbo_ask_px    (unused_ask_px),
-        .bbo_ask_qty   (unused_ask_qty)
+        .bbo_bid_valid (bbo_bid_valid[gi]),
+        .bbo_bid_px    (bbo_bid_px[gi]),
+        .bbo_bid_qty   (bbo_bid_qty[gi]),
+        .bbo_ask_valid (bbo_ask_valid[gi]),
+        .bbo_ask_px    (bbo_ask_px[gi]),
+        .bbo_ask_qty   (bbo_ask_qty[gi])
       );
     end
   endgenerate
