@@ -10,9 +10,11 @@ class TestPartition(unittest.TestCase):
         self.assertEqual(pipe_of(1), 1)
         self.assertEqual(pipe_of(2), 2)
         self.assertEqual(pipe_of(3), 3)
-        self.assertEqual(pipe_of(4), 0)
-        self.assertEqual(N_PIPES, 4)
-        self.assertEqual(len(PartitionedVenue().seq), 4)
+        self.assertEqual(pipe_of(4), 4)
+        self.assertEqual(pipe_of(7), 7)
+        self.assertEqual(pipe_of(8), 0)
+        self.assertEqual(N_PIPES, 8)
+        self.assertEqual(len(PartitionedVenue().seq), 8)
 
     def test_disjoint_pipes(self) -> None:
         v = PartitionedVenue()
@@ -24,17 +26,16 @@ class TestPartition(unittest.TestCase):
         self.assertEqual(v.seq[0], 1)
         self.assertEqual(v.seq[1], 1)
 
-    def test_four_pipes_no_cross(self) -> None:
+    def test_eight_pipes_no_cross(self) -> None:
         v = PartitionedVenue()
-        for sid, oid in enumerate((1, 2, 3, 4), start=0):
-            v.limit(sid, SIDE_SELL, 100, 10, oid)
-        r = v.limit(3, SIDE_BUY, 100, 10, 5)
+        for sid in range(N_PIPES):
+            v.limit(sid, SIDE_SELL, 100, 10, sid + 1)
+        r = v.limit(7, SIDE_BUY, 100, 10, 100)
         self.assertEqual(r.filled_qty, 10)
-        self.assertEqual(r.oid, 5)
-        self.assertEqual(v.book(0).bbo_ask_qty, 10)
-        self.assertEqual(v.book(1).bbo_ask_qty, 10)
-        self.assertEqual(v.book(2).bbo_ask_qty, 10)
-        self.assertFalse(v.book(3).bbo_ask_valid)
+        self.assertEqual(r.oid, 100)
+        for sid in range(N_PIPES - 1):
+            self.assertEqual(v.book(sid).bbo_ask_qty, 10)
+        self.assertFalse(v.book(7).bbo_ask_valid)
 
     def test_same_symbol_ordered(self) -> None:
         v = PartitionedVenue()

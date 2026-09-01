@@ -5,7 +5,7 @@ from __future__ import annotations
 from book import Book, BookRsp
 from venue import Venue
 
-N_PIPES = 4
+N_PIPES = 8
 
 
 def pipe_of(symbol: int, k: int = N_PIPES) -> int:

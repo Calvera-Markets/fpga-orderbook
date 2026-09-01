@@ -145,15 +145,19 @@ void test_out_of_range_nak() {
 }
 
 void test_beyond_old_n_syms() {
-  // N_SYMS_PER_PIPE was 4; local 4 must now rest, local 8 NAK.
+  // N_SYMS_PER_PIPE is 16 (N_PIPES_P=1 so local == symbol).
   reset();
-  Rsp r = issue(4, BOOK_LIMIT, SIDE_BUY, 50, 5, 11);
-  expect(r.ok, "fifth book rests");
-  expect_eq_u64(r.rest, 5, "fifth book qty");
-  r = issue(4, BOOK_LIMIT, SIDE_SELL, 50, 5, 12);
-  expect_eq_u64(r.filled, 5, "fifth book fill");
-  r = issue(8, BOOK_LIMIT, SIDE_BUY, 10, 1, 13);
-  expect(!r.ok, "ninth book oor");
+  Rsp r = issue(8, BOOK_LIMIT, SIDE_BUY, 50, 5, 11);
+  expect(r.ok, "ninth book rests");
+  expect_eq_u64(r.rest, 5, "ninth book qty");
+  r = issue(8, BOOK_LIMIT, SIDE_SELL, 50, 5, 12);
+  expect_eq_u64(r.filled, 5, "ninth book fill");
+  r = issue(15, BOOK_LIMIT, SIDE_BUY, 50, 5, 13);
+  expect(r.ok, "last book rests");
+  r = issue(15, BOOK_LIMIT, SIDE_SELL, 50, 5, 14);
+  expect_eq_u64(r.filled, 5, "last book fill");
+  r = issue(16, BOOK_LIMIT, SIDE_BUY, 10, 1, 15);
+  expect(!r.ok, "local 16 oor");
 }
 
 }  // namespace

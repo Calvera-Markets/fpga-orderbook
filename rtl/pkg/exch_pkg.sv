@@ -13,9 +13,9 @@ package exch_pkg;
   localparam int CNT_W      = $clog2(MAX_ORDERS + 1);
   localparam int N_LEVELS   = 8;
   localparam int LVL_IDX_W  = $clog2(N_LEVELS);
-  localparam int N_PIPES    = 4;
+  localparam int N_PIPES    = 8;
   localparam int PIPE_W     = $clog2(N_PIPES);
-  localparam int N_SYMS_PER_PIPE = 8;
+  localparam int N_SYMS_PER_PIPE = 16;
   localparam int SYM_IDX_W  = $clog2(N_SYMS_PER_PIPE);
 
   localparam logic [1:0] OP_ADD    = 2'd0;

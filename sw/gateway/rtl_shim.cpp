@@ -10,7 +10,7 @@ double sc_time_stamp() { return 0; }
 
 namespace {
 
-constexpr int N_PIPES = 4;
+constexpr int N_PIPES = 8;
 constexpr int MAX_TICKS = 10000;
 
 struct Fill {

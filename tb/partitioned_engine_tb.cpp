@@ -13,8 +13,8 @@ constexpr uint8_t BOOK_CANCEL = 1;
 constexpr uint8_t SIDE_BUY = 0;
 constexpr uint8_t SIDE_SELL = 1;
 // Keep in sync with exch_pkg.
-constexpr int N_PIPES = 4;
-constexpr int N_SYMS_PER_PIPE = 8;
+constexpr int N_PIPES = 8;
+constexpr int N_SYMS_PER_PIPE = 16;
 
 int errors = 0;
 int checks = 0;
@@ -205,32 +205,68 @@ void test_parallel_issue() {
   std::cout << "parallel_issue gap_cycles=" << gap << "\n";
 }
 
-void test_four_pipes() {
+void test_parallel_high_pipe() {
   reset();
+  const int hi = N_PIPES - 1;
   issue(0, BOOK_LIMIT, SIDE_SELL, 100, 10, 1);
-  issue(1, BOOK_LIMIT, SIDE_SELL, 100, 10, 2);
-  issue(2, BOOK_LIMIT, SIDE_SELL, 100, 10, 3);
-  issue(3, BOOK_LIMIT, SIDE_SELL, 100, 10, 4);
-  Rsp r = issue(3, BOOK_LIMIT, SIDE_BUY, 100, 10, 5);
-  expect_eq_u64(r.filled, 10, "pipe3 self-fill");
-  r = issue(0, BOOK_LIMIT, SIDE_BUY, 100, 10, 6);
-  expect_eq_u64(r.filled, 10, "pipe0 still full");
-  r = issue(2, BOOK_LIMIT, SIDE_BUY, 100, 10, 7);
-  expect_eq_u64(r.filled, 10, "pipe2 still full");
-  r = issue(1, BOOK_LIMIT, SIDE_BUY, 100, 10, 8);
-  expect_eq_u64(r.filled, 10, "pipe1 still full");
+  issue(static_cast<uint16_t>(hi), BOOK_LIMIT, SIDE_SELL, 100, 10, 2);
+  fills.clear();
+  fire(0, BOOK_LIMIT, SIDE_BUY, 100, 10, 3);
+  int start = cycles;
+  top->cmd_symbol = hi;
+  top->eval();
+  expect(top->cmd_ready, "high pipe ready while pipe 0 matching");
+  fire(static_cast<uint16_t>(hi), BOOK_LIMIT, SIDE_BUY, 100, 10, 4);
+  int gap = cycles - start;
+  expect(gap <= 4, "high pipe fire without waiting for first match");
+  bool got0 = false;
+  bool got_hi = false;
+  Rsp r0{};
+  Rsp rhi{};
+  int guard = 0;
+  while ((!got0 || !got_hi) && guard++ < 10000) {
+    if (!got0 && ((top->rsp_valid >> 0) & 1)) {
+      got0 = true;
+      r0.ok = (top->rsp_ok >> 0) & 1;
+      r0.filled = top->rsp_filled_qty[0];
+    }
+    if (!got_hi && ((top->rsp_valid >> hi) & 1)) {
+      got_hi = true;
+      rhi.ok = (top->rsp_ok >> hi) & 1;
+      rhi.filled = top->rsp_filled_qty[hi];
+    }
+    if (!got0 || !got_hi) {
+      tick();
+    }
+  }
+  expect(got0 && got_hi, "pipe 0 and high pipe responded");
+  expect_eq_u64(r0.filled, 10, "pipe0 fill");
+  expect_eq_u64(rhi.filled, 10, "high pipe fill");
+  std::cout << "parallel_high_pipe gap_cycles=" << gap << "\n";
+}
+
+void test_all_pipes() {
+  reset();
+  for (int p = 0; p < N_PIPES; p++) {
+    issue(static_cast<uint16_t>(p), BOOK_LIMIT, SIDE_SELL, 100, 10, 100 + p);
+  }
+  for (int p = 0; p < N_PIPES; p++) {
+    Rsp r = issue(static_cast<uint16_t>(p), BOOK_LIMIT, SIDE_BUY, 100, 10, 200 + p);
+    expect_eq_u64(r.filled, 10, "pipe self-fill");
+  }
 }
 
 void test_high_local() {
   reset();
-  // symbol 16 → pipe 0, local 4 (OOR when N_SYMS_PER_PIPE was 4)
-  Rsp r = issue(N_PIPES * 4, BOOK_LIMIT, SIDE_BUY, 50, 5, 30);
-  expect(r.ok, "local 4 rests");
-  expect_eq_u64(r.rest, 5, "local 4 qty");
-  r = issue(N_PIPES * 4, BOOK_LIMIT, SIDE_SELL, 50, 5, 31);
-  expect_eq_u64(r.filled, 5, "local 4 fill");
-  r = issue(N_PIPES * N_SYMS_PER_PIPE, BOOK_LIMIT, SIDE_BUY, 10, 1, 32);
-  expect(!r.ok, "local 8 oor");
+  // last valid: symbol = K*(N-1) → pipe 0, local N-1
+  const uint16_t last = static_cast<uint16_t>(N_PIPES * (N_SYMS_PER_PIPE - 1));
+  Rsp r = issue(last, BOOK_LIMIT, SIDE_BUY, 50, 5, 30);
+  expect(r.ok, "last local rests");
+  expect_eq_u64(r.rest, 5, "last local qty");
+  r = issue(last, BOOK_LIMIT, SIDE_SELL, 50, 5, 31);
+  expect_eq_u64(r.filled, 5, "last local fill");
+  r = issue(static_cast<uint16_t>(N_PIPES * N_SYMS_PER_PIPE), BOOK_LIMIT, SIDE_BUY, 10, 1, 32);
+  expect(!r.ok, "beyond last local oor");
 }
 
 }  // namespace
@@ -243,7 +279,8 @@ int main(int argc, char **argv) {
   test_cancel();
   test_cancel_without_symbol();
   test_parallel_issue();
-  test_four_pipes();
+  test_parallel_high_pipe();
+  test_all_pipes();
   test_high_local();
   delete top;
   if (errors) {
