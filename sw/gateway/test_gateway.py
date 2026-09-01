@@ -177,12 +177,56 @@ class TestTickersAndMd(unittest.TestCase):
             handle_line(a, "LIMIT BUY 0 100 10 1")
             handle_line(a, "LIMIT BUY BTC 100 10 2")
             self.assertEqual(a.instruments.lookup("BTC"), 1)
+            inst = [x for x in Wal(wal).read_all() if x["type"] == "instrument"]
+            self.assertEqual(len(inst), 1)
             b = Exchange(wal)
             self.assertEqual(b.instruments.lookup("BTC"), 1)
             out = handle_line(b, "LIMIT SELL BTC 100 10 3")
             assert out is not None
             self.assertIn("FILL maker=2", out)
             self.assertNotIn("FILL maker=1", out)
+            inst = [x for x in Wal(wal).read_all() if x["type"] == "instrument"]
+            self.assertEqual(len(inst), 1)
+
+    def test_integer_wal_restart_then_intern_skips_used_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            wal = Path(tmp) / "exch.wal"
+            a = Exchange(wal)
+            handle_line(a, "LIMIT BUY 0 100 10 1")
+            b = Exchange(wal)
+            out = handle_line(b, "LIMIT BUY BTC 100 10 2")
+            assert out is not None
+            self.assertEqual(b.instruments.lookup("BTC"), 1)
+            self.assertNotIn("FILL", out)
+            out = handle_line(b, "LIMIT SELL BTC 100 10 3")
+            assert out is not None
+            self.assertIn("FILL maker=2", out)
+            self.assertNotIn("FILL maker=1", out)
+            self.assertEqual(b.venue.book(0).bbo_bid_qty, 10)
+
+    def test_unknown_cancel_replay_does_not_reserve_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            wal = Path(tmp) / "exch.wal"
+            a = Exchange(wal)
+            handle_line(a, "CANCEL 999")
+            cmds = [x for x in Wal(wal).read_all() if x["type"] == "cmd"]
+            self.assertEqual(len(cmds), 1)
+            self.assertIsNone(cmds[0]["symbol"])
+            b = Exchange(wal)
+            out = handle_line(b, "LIMIT BUY BTC 100 10 1")
+            assert out is not None
+            self.assertEqual(b.instruments.lookup("BTC"), 0)
+            self.assertIn("OK oid=1", out)
+
+    def test_unknown_cancel_then_intern_survives_replay(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            wal = Path(tmp) / "exch.wal"
+            a = Exchange(wal)
+            handle_line(a, "CANCEL 999")
+            handle_line(a, "LIMIT BUY BTC 100 10 1")
+            self.assertEqual(a.instruments.lookup("BTC"), 0)
+            b = Exchange(wal)
+            self.assertEqual(b.instruments.lookup("BTC"), 0)
 
     def test_bbo_unseen_ticker_does_not_allocate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

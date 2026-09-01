@@ -60,8 +60,8 @@ class Exchange:
             elif op == "cancel":
                 oid = int(rec["oid"])
                 symbol = self.venue.oids.get(oid)
-                if rec.get("symbol") is not None:
-                    self.instruments.reserve(int(rec["symbol"]))
+                if symbol is not None:
+                    self.instruments.reserve(symbol)
                 p = int(rec.get("pipe", pipe_of(symbol) if symbol is not None else 0))
                 self.venue.cancel(oid, bump=False)
                 self.venue.seq[p] = max(self.venue.seq[p], int(rec["seq"]))
@@ -124,7 +124,7 @@ class Exchange:
         self._log_cmd(
             {
                 "op": "cancel",
-                "symbol": 0 if symbol is None else symbol,
+                "symbol": symbol,
                 "side": SIDE_BUY,
                 "price": 0,
                 "qty": 0,
