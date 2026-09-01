@@ -107,5 +107,37 @@ class TestCli(unittest.TestCase):
             self.assertIn("rest=10", out)
 
 
+class TestTickersAndMd(unittest.TestCase):
+    def test_ticker_intern_and_no_cross(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            exch = Exchange(Path(tmp) / "exch.wal")
+            out = handle_line(exch, "LIMIT BUY BTC 100 10 1")
+            assert out is not None
+            self.assertIn("OK oid=1", out)
+            self.assertIn("sym=BTC", out)
+            self.assertIn("MD BBO sym=BTC", out)
+            out = handle_line(exch, "LIMIT SELL ETH 100 10 2")
+            assert out is not None
+            self.assertNotIn("FILL", out)
+            self.assertIn("sym=ETH", out)
+
+    def test_ticker_match_and_md_trade(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            exch = Exchange(Path(tmp) / "exch.wal")
+            handle_line(exch, "LIMIT SELL BTC 100 10 1")
+            out = handle_line(exch, "LIMIT BUY BTC 100 4 2")
+            assert out is not None
+            self.assertIn("FILL maker=1 taker=2 price=100 qty=4", out)
+            self.assertIn("MD TRADE sym=BTC px=100 qty=4 maker=1 taker=2", out)
+            self.assertIn("MD BBO sym=BTC", out)
+
+    def test_integer_still_works(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            exch = Exchange(Path(tmp) / "exch.wal")
+            out = handle_line(exch, "LIMIT BUY 3 10 1 8")
+            assert out is not None
+            self.assertIn("pipe=1", out)
+
+
 if __name__ == "__main__":
     unittest.main()

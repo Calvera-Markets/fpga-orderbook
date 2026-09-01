@@ -20,23 +20,25 @@ Software owns persistence. The book is rebuilt by replay, not by loading a snaps
 
 | Command | Meaning |
 |---|---|
-| `LIMIT BUY <sym> <price> <qty> <oid>` | GTC limit on integer `symbol_id` |
+| `LIMIT BUY <sym> <price> <qty> <oid>` | GTC limit. `<sym>` is an integer id **or** a ticker (`BTC`) |
 | `LIMIT SELL <sym> <price> <qty> <oid>` | GTC limit |
 | `CANCEL <oid>` | Cancel resting order (oid map finds the symbol) |
 | `BBO` | Print BBO for every live symbol (not logged) |
-| `BBO <sym>` | Print BBO for one symbol |
+| `BBO <sym>` | Print BBO for one symbol or ticker |
 | `QUIT` | Exit the CLI |
 
-Integers only (ticks, lots, symbol ids). `BUY=0`, `SELL=1` on the book API. Tickers never enter the engine.
+Ticks and lots are integers. Tickers are interned at the gateway to dense ids; the engine and WAL store the integer. `BUY=0`, `SELL=1` on the book API.
 
 Reply, in order:
 
 ```
-FILL maker=<id> taker=<id> price=<px> qty=<qty>     # zero or more
+FILL maker=<id> taker=<id> price=<px> qty=<qty>     # execution report
 OK|NAK oid=<id> filled=<n> rest=<n> unrested=<n> pipe=<k>
-BBO [sym=<id>] bid=<px>:<qty>| -  ask=<px>:<qty>| -
+BBO [sym=<name|id>] bid=<px>:<qty>| -  ask=<px>:<qty>| -
+MD TRADE sym=<name> px=<px> qty=<qty> maker=<id> taker=<id>   # public feed
+MD BBO sym=<name> bid=... ask=...
 
-Match order is **per pipe**. The CLI prints replies in submit order. Two fills on different pipes have no venue-wide sequence.
+Match order is **per pipe**. The CLI prints replies in submit order. Two fills on different pipes have no venue-wide sequence. `MD *` is the same events, not a second matcher.
 ```
 
 `NAK` is a rejected command (qty 0, unknown cancel, rest bound hit). Fills already produced still print first.

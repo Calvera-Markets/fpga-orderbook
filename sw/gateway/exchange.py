@@ -12,12 +12,14 @@ if str(_GOLDEN) not in sys.path:
 from book import SIDE_BUY, BookRsp  # noqa: E402
 from partition import PartitionedVenue, pipe_of
 
+from instruments import Instruments
 from wal import Wal
 
 
 class Exchange:
     def __init__(self, wal_path: Path) -> None:
         self.venue = PartitionedVenue()
+        self.instruments = Instruments()
         self.wal = Wal(wal_path)
         self._replay()
 

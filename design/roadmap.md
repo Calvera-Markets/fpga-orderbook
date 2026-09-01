@@ -12,9 +12,7 @@
 
 ## Next
 
-**Ticker strings** at the gateway only (`BTC` → id). **Market-data view** of the same fills/BBO. Raise `K` / books-per-pipe when measured.
-
-**Egress / market data.** Same match events, two views: execution reports to the gateway, BBO + last trade to a feed.
+Raise `K` / books-per-pipe when measured. Verilator as a library behind the gateway. WAL file per pipe.
 
 ## Later
 
