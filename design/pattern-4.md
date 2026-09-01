@@ -48,3 +48,7 @@ Responses and fill events are **per pipe** (arrays of `N_PIPES`). Two pipes may 
 - Two orders on **different** pipes: no ordering between their matches.
 - Two orders on the **same** symbol: FIFO in that pipe (second waits `cmd_ready`).
 - A fill on symbol 1 never consumes resting qty on symbol 2.
+
+## Measured
+
+`make sim-part` / `test_parallel_issue`: two crossing LIMITs on different pipes issued back-to-back. **gap_cycles=1** (pipe 1 accepted the next cycle while pipe 0 was still matching). Both fills completed. Same-symbol orders stay serialized on `cmd_ready`.
