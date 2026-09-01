@@ -53,7 +53,21 @@ Slot indexing uses `IDX_W = $clog2(MAX_ORDERS)` (4 bits for 16 slots). Depth nee
 | `cmd_qty` | 32 | Integer lots |
 | `cmd_oid` | 64 | Taker id (LIMIT) or resting id (CANCEL) |
 
-`symbol_id` is not on this module — a later mux selects which book. Software maps tickers and decimal prices onto these integers.
+`symbol_id` is not on this module — `symbol_bank` / `partitioned_engine` select which book. Software maps tickers onto integer ids.
+
+## Command (into the partitioned engine)
+
+| Field | Width | Meaning |
+|---|---|---|
+| `cmd_valid` / `cmd_ready` | 1 | Ready is **that pipe’s** ready (`pipe = cmd_symbol % K`) |
+| `cmd_symbol` | 16 | Dense integer instrument id |
+| `cmd_op` | 1 | `0=LIMIT`, `1=CANCEL` |
+| `cmd_side` | 1 | `0=buy`, `1=sell` |
+| `cmd_price` / `cmd_qty` / `cmd_oid` | 32 / 32 / 64 | Same as the one-symbol book |
+
+Cancel may omit a useful `cmd_symbol` once `oid_map` is live (lookup then route). Until then the TB supplies symbol.
+
+Responses and fill events are **per pipe** (`rsp_valid[k]`, `evt_valid[k]`, …).
 
 ## Book response
 
