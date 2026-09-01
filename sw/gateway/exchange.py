@@ -1,4 +1,4 @@
-"""Book + WAL: apply commands, persist, replay on start."""
+"""Venue + WAL: apply commands, persist, replay on start."""
 
 from __future__ import annotations
 
@@ -9,14 +9,15 @@ _GOLDEN = Path(__file__).resolve().parent.parent / "golden"
 if str(_GOLDEN) not in sys.path:
     sys.path.insert(0, str(_GOLDEN))
 
-from book import SIDE_BUY, Book, BookRsp  # noqa: E402
+from book import SIDE_BUY, BookRsp  # noqa: E402
+from venue import Venue
 
 from wal import Wal
 
 
 class Exchange:
     def __init__(self, wal_path: Path) -> None:
-        self.book = Book()
+        self.venue = Venue()
         self.wal = Wal(wal_path)
         self.seq = 0
         self._replay()
@@ -28,9 +29,15 @@ class Exchange:
             self.seq = max(self.seq, int(rec["seq"]))
             op = rec["op"]
             if op == "limit":
-                self.book.limit(int(rec["side"]), int(rec["price"]), int(rec["qty"]), int(rec["oid"]))
+                self.venue.limit(
+                    int(rec["symbol"]),
+                    int(rec["side"]),
+                    int(rec["price"]),
+                    int(rec["qty"]),
+                    int(rec["oid"]),
+                )
             elif op == "cancel":
-                self.book.cancel(int(rec["oid"]))
+                self.venue.cancel(int(rec["oid"]))
 
     def _log_cmd(self, rec: dict) -> None:
         self.seq += 1
@@ -63,22 +70,33 @@ class Exchange:
                 }
             )
 
-    def limit(self, side: int, price: int, qty: int, oid: int) -> BookRsp:
+    def limit(self, symbol: int, side: int, price: int, qty: int, oid: int) -> BookRsp:
         self._log_cmd(
             {
                 "op": "limit",
+                "symbol": symbol,
                 "side": side,
                 "price": price,
                 "qty": qty,
                 "oid": oid,
             }
         )
-        rsp = self.book.limit(side, price, qty, oid)
+        rsp = self.venue.limit(symbol, side, price, qty, oid)
         self._log_result(rsp)
         return rsp
 
     def cancel(self, oid: int) -> BookRsp:
-        self._log_cmd({"op": "cancel", "side": SIDE_BUY, "price": 0, "qty": 0, "oid": oid})
-        rsp = self.book.cancel(oid)
+        symbol = self.venue.oids.get(oid)
+        self._log_cmd(
+            {
+                "op": "cancel",
+                "symbol": 0 if symbol is None else symbol,
+                "side": SIDE_BUY,
+                "price": 0,
+                "qty": 0,
+                "oid": oid,
+            }
+        )
+        rsp = self.venue.cancel(oid)
         self._log_result(rsp)
         return rsp

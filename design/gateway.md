@@ -20,13 +20,14 @@ Software owns persistence. The book is rebuilt by replay, not by loading a snaps
 
 | Command | Meaning |
 |---|---|
-| `LIMIT BUY <price> <qty> <oid>` | GTC limit |
-| `LIMIT SELL <price> <qty> <oid>` | GTC limit |
-| `CANCEL <oid>` | Cancel resting order |
-| `BBO` | Print top of book (not logged) |
+| `LIMIT BUY <sym> <price> <qty> <oid>` | GTC limit on integer `symbol_id` |
+| `LIMIT SELL <sym> <price> <qty> <oid>` | GTC limit |
+| `CANCEL <oid>` | Cancel resting order (oid map finds the symbol) |
+| `BBO` | Print BBO for every live symbol (not logged) |
+| `BBO <sym>` | Print BBO for one symbol |
 | `QUIT` | Exit the CLI |
 
-Integers only (ticks and lots). `BUY=0`, `SELL=1` on the book API.
+Integers only (ticks, lots, symbol ids). `BUY=0`, `SELL=1` on the book API. Tickers never enter the engine.
 
 Reply, in order:
 

@@ -22,13 +22,25 @@ def handle_line(exch: Exchange, line: str) -> str | None:
     if kind == "quit":
         return None
     if kind == "bbo":
-        return format_bbo(exch.book) + "\n"
+        _, symbol = cmd
+        if symbol is None:
+            if not exch.venue.books:
+                return "BBO\n"
+            lines = [
+                format_bbo(exch.venue.book(s), s) for s in sorted(exch.venue.books)
+            ]
+            return "\n".join(lines) + "\n"
+        return format_bbo(exch.venue.book(symbol), symbol) + "\n"
     if kind == "limit":
-        _, side, price, qty, oid = cmd
-        return format_rsp(exch.limit(side, price, qty, oid), exch.book)
+        _, side, symbol, price, qty, oid = cmd
+        rsp = exch.limit(symbol, side, price, qty, oid)
+        return format_rsp(rsp, exch.venue.book(symbol), symbol)
     if kind == "cancel":
         _, oid = cmd
-        return format_rsp(exch.cancel(oid), exch.book)
+        symbol = exch.venue.oids.get(oid)
+        rsp = exch.cancel(oid)
+        book = exch.venue.book(symbol) if symbol is not None else exch.venue.book(0)
+        return format_rsp(rsp, book, symbol)
     return "ERR internal\n"
 
 

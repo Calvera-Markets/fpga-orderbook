@@ -22,8 +22,8 @@ def parse(line: str) -> tuple:
         return ("empty",)
     op = parts[0].upper()
     if op == "LIMIT":
-        if len(parts) != 5:
-            raise ParseError("usage: LIMIT BUY|SELL <price> <qty> <oid>")
+        if len(parts) != 6:
+            raise ParseError("usage: LIMIT BUY|SELL <sym> <price> <qty> <oid>")
         side_tok = parts[1].upper()
         if side_tok == "BUY":
             side = SIDE_BUY
@@ -32,10 +32,10 @@ def parse(line: str) -> tuple:
         else:
             raise ParseError("side must be BUY or SELL")
         try:
-            price, qty, oid = int(parts[2]), int(parts[3]), int(parts[4])
+            symbol, price, qty, oid = int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5])
         except ValueError as exc:
-            raise ParseError("price, qty, oid must be integers") from exc
-        return ("limit", side, price, qty, oid)
+            raise ParseError("sym, price, qty, oid must be integers") from exc
+        return ("limit", side, symbol, price, qty, oid)
     if op == "CANCEL":
         if len(parts) != 2:
             raise ParseError("usage: CANCEL <oid>")
@@ -45,18 +45,25 @@ def parse(line: str) -> tuple:
             raise ParseError("oid must be an integer") from exc
         return ("cancel", oid)
     if op == "BBO":
-        if len(parts) != 1:
-            raise ParseError("usage: BBO")
-        return ("bbo",)
+        if len(parts) == 1:
+            return ("bbo", None)
+        if len(parts) == 2:
+            try:
+                return ("bbo", int(parts[1]))
+            except ValueError as exc:
+                raise ParseError("sym must be an integer") from exc
+        raise ParseError("usage: BBO [sym]")
     if op == "QUIT":
         return ("quit",)
     raise ParseError(f"unknown command {parts[0]!r}")
 
 
-def format_bbo(book: Book) -> str:
+def format_bbo(book: Book, symbol: int | None = None) -> str:
     bid = f"{book.bbo_bid_px}:{book.bbo_bid_qty}" if book.bbo_bid_valid else "-"
     ask = f"{book.bbo_ask_px}:{book.bbo_ask_qty}" if book.bbo_ask_valid else "-"
-    return f"BBO bid={bid} ask={ask}"
+    if symbol is None:
+        return f"BBO bid={bid} ask={ask}"
+    return f"BBO sym={symbol} bid={bid} ask={ask}"
 
 
 def format_fill(fill: Fill) -> str:
@@ -66,12 +73,12 @@ def format_fill(fill: Fill) -> str:
     )
 
 
-def format_rsp(rsp: BookRsp, book: Book) -> str:
+def format_rsp(rsp: BookRsp, book: Book, symbol: int | None = None) -> str:
     lines = [format_fill(f) for f in rsp.fills]
     status = "OK" if rsp.ok else "NAK"
     lines.append(
         f"{status} oid={rsp.oid} filled={rsp.filled_qty} "
         f"rest={rsp.rest_qty} unrested={rsp.unrested_qty}"
     )
-    lines.append(format_bbo(book))
+    lines.append(format_bbo(book, symbol))
     return "\n".join(lines) + "\n"
