@@ -46,7 +46,7 @@ struct Fill {
 std::vector<Fill> fills;
 
 void harvest() {
-  if (top->evt_valid) {
+  if (top->evt_valid && top->evt_ready) {
     fills.push_back(Fill{top->evt_maker_oid, top->evt_taker_oid, top->evt_price,
                          top->evt_qty});
   }
@@ -55,9 +55,9 @@ void harvest() {
 void tick() {
   top->clk = 0;
   top->eval();
+  harvest();
   top->clk = 1;
   top->eval();
-  harvest();
 }
 
 void reset() {
@@ -319,6 +319,47 @@ void test_same_side_serialized() {
   expect_bbo(1, 99, 10, 0, 0, 0, "two bids");
 }
 
+void test_evt_stall_mid_walk() {
+  reset();
+  limit(SIDE_SELL, 100, 4, 1);
+  limit(SIDE_SELL, 100, 6, 2);
+  limit(SIDE_SELL, 105, 50, 3);
+  fills.clear();
+  fire(BOOK_LIMIT, SIDE_BUY, 105, 15, 9);
+  top->evt_ready = 0;
+  int saw_hold = 0;
+  int guard = 0;
+  while (guard++ < 10000) {
+    if (top->rsp_valid) {
+      fail("rsp while evt_ready low");
+      break;
+    }
+    if (top->evt_valid) {
+      saw_hold++;
+    }
+    if (saw_hold > 2) {
+      break;
+    }
+    tick();
+  }
+  expect(saw_hold > 0, "fill held while evt_ready low");
+  expect_eq_u64(fills.size(), 0, "no harvest while stalled");
+  top->evt_ready = 1;
+  Rsp r = wait_rsp();
+  expect(r.ok, "walk ok after stall");
+  expect_eq_u64(r.filled, 15, "walk filled after stall");
+  expect_eq_u64(fills.size(), 3, "three fills after drain");
+  if (fills.size() == 3) {
+    expect_eq_u64(fills[0].maker, 1, "stall f0 maker");
+    expect_eq_u64(fills[0].qty, 4, "stall f0 qty");
+    expect_eq_u64(fills[1].maker, 2, "stall f1 maker");
+    expect_eq_u64(fills[1].qty, 6, "stall f1 qty");
+    expect_eq_u64(fills[2].maker, 3, "stall f2 maker");
+    expect_eq_u64(fills[2].qty, 5, "stall f2 qty");
+  }
+  expect_bbo(0, 0, 0, 1, 105, 45, "walk bbo after stall");
+}
+
 void test_cross_waits_for_inflight_ask() {
   reset();
   fire(BOOK_LIMIT, SIDE_SELL, 100, 10, 1);
@@ -350,6 +391,7 @@ int main(int argc, char **argv) {
   test_bid_ask_parallel();
   test_same_side_serialized();
   test_cross_waits_for_inflight_ask();
+  test_evt_stall_mid_walk();
 
   delete top;
 
