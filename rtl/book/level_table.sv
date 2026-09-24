@@ -13,25 +13,15 @@ module level_table
   output logic [LVL_IDX_W-1:0] slot
 );
 
-  logic                hit_m [0:PRICE_WIN-1];
-  logic [LVL_IDX_W-1:0] slot_m [0:PRICE_WIN-1];
-
-  assign in_window = (probe < PRICE_WIN);
-
-  always_comb begin
-    for (int p = 0; p < PRICE_WIN; p++) begin
-      hit_m[p]  = 1'b0;
-      slot_m[p] = '0;
-    end
-    for (int i = 0; i < N_LEVELS; i++) begin
-      if (used[i] && px[i] < PRICE_WIN) begin
-        hit_m[px[i]]  = 1'b1;
-        slot_m[px[i]] = LVL_IDX_W'(i);
-      end
-    end
-    hit  = in_window && hit_m[probe];
-    slot = in_window ? slot_m[probe] : '0;
-  end
+  tick_array #(.WINDOW(PRICE_WIN)) u_ticks (
+    .base(32'd0),
+    .used(used),
+    .px(px),
+    .probe(probe),
+    .in_window(in_window),
+    .hit(hit),
+    .slot(slot)
+  );
 
 endmodule
 

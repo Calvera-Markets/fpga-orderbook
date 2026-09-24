@@ -9,6 +9,7 @@ SLICE_TOP := slice_engine
 LVL_TOP := level_table
 TOUCH_TOP := touch_tile
 OID_TOP := oid_hash
+TICK_TOP := tick_array
 FIFO_DIR := obj_dir/price_level_fifo
 BOOK_DIR := obj_dir/book
 BANK_DIR := obj_dir/bank
@@ -17,6 +18,7 @@ SLICE_DIR := obj_dir/slice
 LVL_DIR := obj_dir/level_table
 TOUCH_DIR := obj_dir/touch_tile
 OID_DIR := obj_dir/oid_hash
+TICK_DIR := obj_dir/tick_array
 FIFO_BIN := $(FIFO_DIR)/$(FIFO_TOP)_sim
 BOOK_BIN := $(BOOK_DIR)/$(BOOK_TOP)_sim
 BANK_BIN := $(BANK_DIR)/$(BANK_TOP)_sim
@@ -25,7 +27,8 @@ SLICE_BIN := $(SLICE_DIR)/$(SLICE_TOP)_sim
 LVL_BIN := $(LVL_DIR)/$(LVL_TOP)_sim
 TOUCH_BIN := $(TOUCH_DIR)/$(TOUCH_TOP)_sim
 OID_BIN := $(OID_DIR)/$(OID_TOP)_sim
-BOOK_RTL := $(COMMON_RTL) rtl/book/level_table.sv rtl/book/one_symbol_book.sv
+TICK_BIN := $(TICK_DIR)/$(TICK_TOP)_sim
+BOOK_RTL := $(COMMON_RTL) rtl/book/tick_array.sv rtl/book/level_table.sv rtl/book/one_symbol_book.sv
 
 VFLAGS := --cc --exe --build -sv -Wall -CFLAGS "-std=c++17 -Wall"
 VERILATOR_ROOT ?= $(shell $(VERILATOR) --getenv VERILATOR_ROOT)
@@ -36,7 +39,7 @@ ifeq ($(shell uname),Darwin)
 LIBLDFLAGS := -Wl,-U,__Z15vl_time_stamp64v,-U,__Z13sc_time_stampv,-U,_vlog_startup_routines
 endif
 
-.PHONY: all help golden sim sim-fifo sim-book sim-bank sim-part sim-slice sim-level sim-touch sim-oid lib rtl-gw test clean run
+.PHONY: all help golden sim sim-fifo sim-book sim-bank sim-part sim-slice sim-level sim-touch sim-oid sim-tick lib rtl-gw test clean run
 
 all: test
 
@@ -93,9 +96,9 @@ sim-part: $(PART_BIN)
 sim-slice: $(SLICE_BIN)
 	$(SLICE_BIN)
 
-$(LVL_BIN): rtl/pkg/exch_pkg.sv rtl/book/level_table.sv tb/level_table_tb.cpp
+$(LVL_BIN): rtl/pkg/exch_pkg.sv rtl/book/tick_array.sv rtl/book/level_table.sv tb/level_table_tb.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $(LVL_TOP) -Mdir $(LVL_DIR) -o $(LVL_TOP)_sim \
-		rtl/pkg/exch_pkg.sv rtl/book/level_table.sv tb/level_table_tb.cpp
+		rtl/pkg/exch_pkg.sv rtl/book/tick_array.sv rtl/book/level_table.sv tb/level_table_tb.cpp
 
 sim-level: $(LVL_BIN)
 	$(LVL_BIN)
@@ -113,6 +116,13 @@ $(OID_BIN): rtl/pkg/exch_pkg.sv rtl/book/oid_hash.sv tb/oid_hash_tb.cpp
 
 sim-oid: $(OID_BIN)
 	$(OID_BIN)
+
+$(TICK_BIN): rtl/pkg/exch_pkg.sv rtl/book/tick_array.sv tb/tick_array_tb.cpp
+	$(VERILATOR) $(VFLAGS) --top-module $(TICK_TOP) -Mdir $(TICK_DIR) -o $(TICK_TOP)_sim \
+		rtl/pkg/exch_pkg.sv rtl/book/tick_array.sv tb/tick_array_tb.cpp
+
+sim-tick: $(TICK_BIN)
+	$(TICK_BIN)
 
 sim: sim-fifo sim-book sim-bank sim-part sim-slice sim-level
 
