@@ -11,6 +11,7 @@ from price_level import PriceLevel
 
 N_LEVELS = 8
 PRICE_WIN = 128
+MISS_CYCLES = 4
 SIDE_BUY = 0
 SIDE_SELL = 1
 BOOK_LIMIT = 0
@@ -40,6 +41,8 @@ class Book:
         self.n_levels = n_levels
         self.bids: dict[int, PriceLevel] = {}
         self.asks: dict[int, PriceLevel] = {}
+        self.touch = {SIDE_BUY: None, SIDE_SELL: None}
+        self.last_wait = 0
 
     @property
     def bbo_bid_valid(self) -> bool:
@@ -65,9 +68,15 @@ class Book:
     def bbo_ask_qty(self) -> int:
         return self.asks[self.bbo_ask_px].total_qty if self.asks else 0
 
+    def _touch(self, side: int, price: int) -> None:
+        prev = self.touch[side]
+        self.last_wait = 0 if prev is None or prev == price else MISS_CYCLES
+        self.touch[side] = price
+
     def limit(self, side: int, price: int, qty: int, oid: int) -> BookRsp:
         if qty == 0:
             return BookRsp(ok=False, oid=oid)
+        self._touch(side, price)
         fills: list[Fill] = []
         remaining = qty
         filled = 0
