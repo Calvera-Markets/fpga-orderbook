@@ -246,6 +246,13 @@ module slice_engine
     end
   end
 
+  wire               hash_hit, tail_hit;
+  wire [7:0]         hash_slice, tail_slice;
+  wire [PRICE_W-1:0] hash_price, tail_price;
+  wire [3:0]         hash_slot, tail_slot;
+  logic [2:0]        tail_left;
+  logic [OID_W-1:0]  tail_seen;
+
   oid_hash u_oids (
     .clk, .rst_n,
     .wr_en     (place_wr),
@@ -255,11 +262,48 @@ module slice_engine
     .wr_price  (place_px),
     .wr_slot   (4'd0),
     .rd_oid    (lookup_oid),
-    .hit       (lookup_hit),
-    .rd_slice  (lookup_slice),
-    .rd_price  (lookup_price),
-    .rd_slot   (lookup_slot)
+    .hit       (hash_hit),
+    .rd_slice  (hash_slice),
+    .rd_price  (hash_price),
+    .rd_slot   (hash_slot)
   );
+
+  oid_tail u_tail (
+    .clk, .rst_n,
+    .wr_en     (place_wr),
+    .wr_oid    (place_oid),
+    .wr_slice  (place_slice),
+    .wr_price  (place_px),
+    .wr_slot   (4'd0),
+    .rd_oid    (lookup_oid),
+    .hit       (tail_hit),
+    .rd_slice  (tail_slice),
+    .rd_price  (tail_price),
+    .rd_slot   (tail_slot)
+  );
+
+  // A hash hit is immediate. A hash miss waits out tail_left, and that
+  // wait is not a slice cmd_ready.
+  wire tail_ready = (tail_left == 3'd0) && (tail_seen == lookup_oid);
+  assign lookup_hit   = hash_hit || (tail_ready && tail_hit);
+  assign lookup_slice = hash_hit ? hash_slice : tail_slice;
+  assign lookup_price = hash_hit ? hash_price : tail_price;
+  assign lookup_slot  = hash_hit ? hash_slot  : tail_slot;
+
+  always_ff @(posedge clk) begin
+    if (!rst_n) begin
+      tail_left <= 3'd0;
+      tail_seen <= '0;
+    end else if (lookup_oid != tail_seen && !hash_hit) begin
+      tail_seen <= lookup_oid;
+      tail_left <= 3'd4;
+    end else if (tail_left != 3'd0) begin
+      tail_left <= tail_left - 3'd1;
+      tail_seen <= lookup_oid;
+    end else begin
+      tail_seen <= lookup_oid;
+    end
+  end
 
 endmodule
 

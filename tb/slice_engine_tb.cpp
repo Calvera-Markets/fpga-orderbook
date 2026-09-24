@@ -84,6 +84,7 @@ void reset() {
   top->cfg_slice = 0;
   top->cfg_symbol = 0;
   top->cfg_algo = ALGO_FIFO;
+  top->lookup_oid = 0;
   top->cmd_valid = 0;
   top->cmd_op = 0;
   top->cmd_side = 0;
@@ -300,6 +301,27 @@ void test_lookup_names_the_slice() {
   expect(bit(top->cmd_ready, 1), "cancel did not busy slice 1");
 }
 
+void test_cold_lookup_does_not_stall() {
+  reset();
+  issue(0, BOOK_LIMIT, SIDE_BUY, 40, 1, 7);
+  issue(0, BOOK_LIMIT, SIDE_BUY, 40, 1, 23);
+  tick();
+  top->lookup_oid = 23;
+  tick();
+  top->lookup_oid = 7;
+  top->eval();
+  expect(!top->lookup_hit, "displaced id misses the hot hash");
+  expect(bit(top->cmd_ready, 1), "slice 1 ready during the tail wait");
+  Rsp other = issue(1, BOOK_LIMIT, SIDE_SELL, 80, 1, 99);
+  expect(other.ok, "slice 1 rested during the cold lookup");
+  int guard = 0;
+  while (!top->lookup_hit && guard++ < 20) {
+    tick();
+  }
+  expect(top->lookup_hit, "tail finds the displaced id");
+  expect_eq_u64(top->lookup_slice, 0, "displaced id is still slice 0");
+}
+
 void test_reslice_when_idle() {
   reset();
   top->cfg_slice = 3;
@@ -324,6 +346,7 @@ int main(int argc, char **argv) {
   test_price_miss_does_not_stall_other_slice();
   test_algo_nak_is_local();
   test_lookup_names_the_slice();
+  test_cold_lookup_does_not_stall();
   test_reslice_when_idle();
   if (errors == 0) {
     std::cout << "slice_engine: " << checks << " checks passed\n";
