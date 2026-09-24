@@ -295,6 +295,7 @@ void test_lookup_names_the_slice() {
   expect(top->lookup_hit, "resting oid is in the map");
   expect_eq_u64(top->lookup_slice, 0, "oid sits on slice 0");
   expect_eq_u64(top->lookup_price, 40, "oid remembers the price");
+  expect_eq_u64(top->lookup_side, SIDE_BUY, "tile side is bid");
   expect(bit(top->cmd_ready, 1), "slice 1 stays ready");
   Rsp c = issue(top->lookup_slice, BOOK_CANCEL, SIDE_BUY, 0, 0, 7);
   expect(c.ok, "cancel enters the looked-up slice");

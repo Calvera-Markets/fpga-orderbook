@@ -9,7 +9,7 @@ class TestOidMap(unittest.TestCase):
     def test_place_is_slice_price_slot(self) -> None:
         v = SlicedVenue()
         v.limit(1, SIDE_BUY, 10, 5, 7)
-        self.assertEqual(v.oids.place(7), (1, 10, 0))
+        self.assertEqual(v.oids.place(7), (1, (SIDE_BUY, 10), 0))
         r = v.cancel(7)
         self.assertTrue(r.ok)
         self.assertIsNone(v.oids.place(7))

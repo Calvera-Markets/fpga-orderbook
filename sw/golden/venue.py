@@ -19,9 +19,9 @@ class Venue:
     def try_book(self, symbol: int) -> Book | None:
         return self.books.get(symbol)
 
-    def _track(self, symbol: int, oid: int, rsp: BookRsp, price: int = 0) -> BookRsp:
+    def _track(self, symbol: int, oid: int, rsp: BookRsp, price: int = 0, side: int = 0) -> BookRsp:
         if rsp.rest_qty > 0:
-            self.oids.insert(oid, symbol, price=price, slot=rsp.slot)
+            self.oids.insert(oid, symbol, price=price, slot=rsp.slot, side=side)
         book = self.book(symbol)
         for fill in rsp.fills:
             if not book.has_oid(fill.maker_oid):
@@ -30,7 +30,7 @@ class Venue:
 
     def limit(self, symbol: int, side: int, price: int, qty: int, oid: int) -> BookRsp:
         rsp = self.book(symbol).limit(side, price, qty, oid)
-        return self._track(symbol, oid, rsp, price)
+        return self._track(symbol, oid, rsp, price, side)
 
     def cancel(self, oid: int) -> BookRsp:
         symbol = self.oids.get(oid)

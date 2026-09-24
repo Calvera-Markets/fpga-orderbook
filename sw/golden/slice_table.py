@@ -58,7 +58,7 @@ class _OidUnion:
                 return hit
         return None
 
-    def place(self, oid: int) -> tuple[int, int, int] | None:
+    def place(self, oid: int) -> tuple[int, tuple[int, int], int] | None:
         for venue in self._slices:
             hit = venue.oids.place(oid)
             if hit is not None:

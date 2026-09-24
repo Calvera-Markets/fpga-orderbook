@@ -64,6 +64,7 @@ module slice_engine
   output wire [7:0]           lookup_slice,
   output wire [PRICE_W-1:0]   lookup_price,
   output wire [3:0]           lookup_slot,
+  output logic                lookup_side,
 
   output logic [PRICE_W-1:0]  wb_px
 );
@@ -78,6 +79,7 @@ module slice_engine
   logic [N_SLICES-1:0] bid_hit, ask_hit;
   logic [N_SLICES-1:0] bid_touch_v, ask_touch_v;
   logic [PRICE_W-1:0]  acc_px [N_SLICES];
+  logic                acc_side [N_SLICES];
   logic [PRICE_W-1:0]  bid_tag [N_SLICES];
   logic [PRICE_W-1:0]  ask_tag [N_SLICES];
   logic                store_wr;
@@ -149,6 +151,7 @@ module slice_engine
         miss_left[i] <= 3'd0;
         miss_grant[i]<= 1'b0;
         acc_px[i]    <= '0;
+        acc_side[i]  <= SIDE_BUY;
         store_wr     <= 1'b0;
         store_px     <= '0;
       end
@@ -168,6 +171,7 @@ module slice_engine
         if (book_cmd_valid[i]) begin
           miss_grant[i] <= 1'b0;
           acc_px[i]     <= cmd_price[i];
+          acc_side[i]   <= cmd_side[i];
         end
         if (cmd_op[i] == BOOK_LIMIT &&
             (cmd_side[i] == SIDE_SELL ? ask_hit[i] : bid_hit[i])) begin
@@ -317,6 +321,7 @@ module slice_engine
   assign lookup_slice = hash_hit ? hash_slice : tail_slice;
   assign lookup_price = hash_hit ? hash_price : tail_price;
   assign lookup_slot  = hash_hit ? hash_slot  : tail_slot;
+  assign lookup_side  = acc_side[lookup_slice[1:0]];
 
   always_ff @(posedge clk) begin
     if (!rst_n) begin

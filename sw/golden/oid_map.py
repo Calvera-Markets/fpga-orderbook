@@ -8,15 +8,23 @@ class OidMap:
         self._sym: dict[int, int] = {}
         self._place: dict[int, tuple[int, int, int]] = {}
 
-    def insert(self, oid: int, symbol: int, price: int = 0, slot: int = 0, slice_id: int | None = None) -> None:
+    def insert(
+        self,
+        oid: int,
+        symbol: int,
+        price: int = 0,
+        slot: int = 0,
+        slice_id: int | None = None,
+        side: int = 0,
+    ) -> None:
         self._sym[oid] = symbol
         where = symbol if slice_id is None else slice_id
-        self._place[oid] = (where, price, slot)
+        self._place[oid] = (where, (side, price), slot)
 
     def get(self, oid: int) -> int | None:
         return self._sym.get(oid)
 
-    def place(self, oid: int) -> tuple[int, int, int] | None:
+    def place(self, oid: int) -> tuple[int, tuple[int, int], int] | None:
         return self._place.get(oid)
 
     def remove(self, oid: int) -> None:
