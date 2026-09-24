@@ -85,7 +85,7 @@ def main(argv: list[str] | None = None) -> int:
         "--engine",
         choices=("python", "rtl"),
         default="python",
-        help="matching backend (python golden or Verilator partitioned_engine)",
+        help="matching backend (python golden or Verilator slice_engine)",
     )
     args = parser.parse_args(argv)
     engine = None

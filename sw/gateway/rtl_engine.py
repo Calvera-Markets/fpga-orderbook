@@ -1,4 +1,4 @@
-"""PartitionedVenue-shaped backend over Verilated partitioned_engine (.so)."""
+"""SlicedVenue-shaped backend over Verilated slice_engine (.so)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ if str(_GOLDEN) not in sys.path:
 
 from book import BOOK_CANCEL, BOOK_LIMIT, BookRsp, Fill  # noqa: E402
 from oid_map import OidMap  # noqa: E402
-from partition import N_PIPES, pipe_of  # noqa: E402
+from slice_table import N_SLICES, SliceTable  # noqa: E402
 
 _REPO = Path(__file__).resolve().parents[2]
 LIB_PATH = _REPO / "obj_dir" / "lib" / "libpe.so"
@@ -99,7 +99,8 @@ class RtlEngine:
         self._h = self._lib.pe_new()
         if not self._h:
             raise RuntimeError("pe_new failed")
-        self.seq = [0] * N_PIPES
+        self.seq = [0] * N_SLICES
+        self.table = SliceTable()
         self.oids = OidMap()
         self._rest_qty: dict[int, int] = {}
         self._live: set[int] = set()
@@ -111,7 +112,7 @@ class RtlEngine:
             lib.pe_free(h)
 
     def pipe(self, symbol: int) -> int:
-        return pipe_of(symbol)
+        return self.table.ensure(symbol)
 
     def book(self, symbol: int) -> BboBook:
         return self._peek(symbol)

@@ -1,4 +1,3 @@
-Agent pid 54851
 VERILATOR ?= verilator
 COMMON_RTL := rtl/pkg/exch_pkg.sv rtl/book/price_level_fifo.sv
 
@@ -39,11 +38,11 @@ help:
 	@echo "make sim-bank  multi-symbol bank (one pipe)"
 	@echo "make sim-part  partitioned engine (K pipes)"
 	@echo "make sim-slice slice engine (one book per slice, private ports)"
-	@echo "make lib       Verilator partitioned_engine as libpe.so (gateway --engine rtl)"
+	@echo "make lib       Verilator slice_engine as libpe.so (gateway --engine rtl)"
 	@echo "make sim       all RTL benches"
 	@echo "make test      golden + all RTL sims + rtl gateway"
-	@echo "make run       interactive mini-exchange (Verilator engine, WAL data/pipe*.wal)"
-	@echo "make clean     remove obj_dir"
+	@echo "make run         interactive mini-exchange (Verilator engine, WAL data/pipe*.wal)"
+	@echo "make clean       remove obj_dir"
 
 golden:
 	cd sw/golden && python3 -m unittest discover -v
@@ -86,14 +85,16 @@ sim-slice: $(SLICE_BIN)
 
 sim: sim-fifo sim-book sim-bank sim-part sim-slice
 
-$(LIB_DIR)/Vpartitioned_engine.mk: $(PART_RTL)
-	$(VERILATOR) --cc --build -sv -Wall --top-module $(PART_TOP) -Mdir $(LIB_DIR) \
-		-CFLAGS "-std=c++17 -Wall -fPIC" $(PART_RTL)
+SLICE_RTL := $(BOOK_RTL) rtl/book/slice_engine.sv
 
-$(LIBPE): $(LIB_DIR)/Vpartitioned_engine.mk sw/gateway/rtl_shim.cpp
+$(LIB_DIR)/Vslice_engine.mk: $(SLICE_RTL)
+	$(VERILATOR) --cc --build -sv -Wall --top-module $(SLICE_TOP) -Mdir $(LIB_DIR) \
+		-CFLAGS "-std=c++17 -Wall -fPIC" $(SLICE_RTL)
+
+$(LIBPE): $(LIB_DIR)/Vslice_engine.mk sw/gateway/rtl_shim.cpp
 	c++ -shared -fPIC -std=c++17 -Wall -o $(LIBPE) sw/gateway/rtl_shim.cpp \
 		-I$(LIB_DIR) -I$(VERILATOR_ROOT)/include -I$(VERILATOR_ROOT)/include/vltstd \
-		$(LIB_DIR)/Vpartitioned_engine__ALL.a $(LIB_DIR)/verilated.o $(LIB_DIR)/verilated_threads.o \
+		$(LIB_DIR)/Vslice_engine__ALL.a $(LIB_DIR)/verilated.o $(LIB_DIR)/verilated_threads.o \
 		-pthread $(LIBLDFLAGS)
 
 lib: $(LIBPE)
@@ -105,6 +106,7 @@ test: golden sim rtl-gw
 
 run: $(LIBPE)
 	python3 sw/gateway/main.py --wal data --engine rtl
+
 
 clean:
 	rm -rf obj_dir

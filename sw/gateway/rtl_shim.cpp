@@ -1,16 +1,17 @@
-// C ABI around Verilated partitioned_engine. Loaded by rtl_engine.py.
+// C ABI around Verilated slice_engine. Loaded by rtl_engine.py.
+// One symbol per slice: slice i owns symbol i unless the host reassigns it.
 
 #include <cstdint>
 #include <vector>
 
-#include "Vpartitioned_engine.h"
+#include "Vslice_engine.h"
 #include "verilated.h"
 
 double sc_time_stamp() { return 0; }
 
 namespace {
 
-constexpr int N_PIPES = 8;
+constexpr int N_SLICES = 4;
 constexpr int MAX_TICKS = 10000;
 
 struct Fill {
@@ -21,15 +22,15 @@ struct Fill {
 };
 
 struct Handle {
-  Vpartitioned_engine *top;
+  Vslice_engine *top;
   std::vector<Fill> fills;
 };
 
 void harvest(Handle *h) {
-  for (int p = 0; p < N_PIPES; p++) {
-    if ((h->top->evt_valid >> p) & 1) {
-      h->fills.push_back(Fill{h->top->evt_maker_oid[p], h->top->evt_taker_oid[p],
-                              h->top->evt_price[p], h->top->evt_qty[p]});
+  for (int s = 0; s < N_SLICES; s++) {
+    if ((h->top->evt_valid >> s) & 1) {
+      h->fills.push_back(Fill{h->top->evt_maker_oid[s], h->top->evt_taker_oid[s],
+                              h->top->evt_price[s], h->top->evt_qty[s]});
     }
   }
 }
@@ -45,19 +46,31 @@ void tick(Handle *h) {
 void reset(Handle *h) {
   h->fills.clear();
   h->top->rst_n = 0;
+  h->top->cfg_valid = 0;
+  h->top->cfg_slice = 0;
+  h->top->cfg_symbol = 0;
+  h->top->cfg_algo = 0;
   h->top->cmd_valid = 0;
-  h->top->cmd_symbol = 0;
   h->top->cmd_op = 0;
   h->top->cmd_side = 0;
-  h->top->cmd_price = 0;
-  h->top->cmd_qty = 0;
-  h->top->cmd_oid = 0;
-  h->top->evt_ready = 1;
+  h->top->evt_ready = (1u << N_SLICES) - 1u;
+  for (int s = 0; s < N_SLICES; s++) {
+    h->top->cmd_price[s] = 0;
+    h->top->cmd_qty[s] = 0;
+    h->top->cmd_oid[s] = 0;
+  }
   for (int i = 0; i < 4; i++) {
     tick(h);
   }
   h->top->rst_n = 1;
   tick(h);
+}
+
+int slice_of(uint16_t symbol) {
+  if (symbol >= N_SLICES) {
+    return -1;
+  }
+  return static_cast<int>(symbol);
 }
 
 }  // namespace
@@ -82,7 +95,7 @@ struct pe_rsp {
 
 void *pe_new() {
   auto *h = new Handle;
-  h->top = new Vpartitioned_engine;
+  h->top = new Vslice_engine;
   reset(h);
   return h;
 }
@@ -96,37 +109,39 @@ void pe_free(void *p) {
 int pe_issue(void *p, uint16_t symbol, uint8_t op, uint8_t side, uint32_t price,
              uint32_t qty, uint64_t oid, pe_rsp *rsp, pe_fill *fills, int max_fills) {
   auto *h = static_cast<Handle *>(p);
-  h->fills.clear();
-  h->top->cmd_symbol = symbol;
-  h->top->cmd_op = op;
-  h->top->cmd_side = side;
-  h->top->cmd_price = price;
-  h->top->cmd_qty = qty;
-  h->top->cmd_oid = oid;
-  int guard = 0;
-  while (!h->top->cmd_ready && guard++ < MAX_TICKS) {
-    tick(h);
-  }
-  if (!h->top->cmd_ready) {
+  const int sl = slice_of(symbol);
+  if (sl < 0) {
     return -1;
   }
-  h->top->cmd_valid = 1;
+  h->fills.clear();
+  h->top->cmd_op = (h->top->cmd_op & ~(1u << sl)) | (static_cast<unsigned>(op) << sl);
+  h->top->cmd_side = (h->top->cmd_side & ~(1u << sl)) | (static_cast<unsigned>(side) << sl);
+  h->top->cmd_price[sl] = price;
+  h->top->cmd_qty[sl] = qty;
+  h->top->cmd_oid[sl] = oid;
+  int guard = 0;
+  while (!((h->top->cmd_ready >> sl) & 1) && guard++ < MAX_TICKS) {
+    tick(h);
+  }
+  if (!((h->top->cmd_ready >> sl) & 1)) {
+    return -1;
+  }
+  h->top->cmd_valid = static_cast<unsigned>(1u << sl);
   tick(h);
   h->top->cmd_valid = 0;
 
-  const int pipe = static_cast<int>(symbol) % N_PIPES;
   guard = 0;
-  while (!((h->top->rsp_valid >> pipe) & 1) && guard++ < MAX_TICKS) {
+  while (!((h->top->rsp_valid >> sl) & 1) && guard++ < MAX_TICKS) {
     tick(h);
   }
-  if (!((h->top->rsp_valid >> pipe) & 1)) {
+  if (!((h->top->rsp_valid >> sl) & 1)) {
     return -1;
   }
-  rsp->ok = (h->top->rsp_ok >> pipe) & 1;
-  rsp->oid = h->top->rsp_oid[pipe];
-  rsp->filled = h->top->rsp_filled_qty[pipe];
-  rsp->rest = h->top->rsp_rest_qty[pipe];
-  rsp->unrested = h->top->rsp_unrested_qty[pipe];
+  rsp->ok = (h->top->rsp_ok >> sl) & 1;
+  rsp->oid = h->top->rsp_oid[sl];
+  rsp->filled = h->top->rsp_filled_qty[sl];
+  rsp->rest = h->top->rsp_rest_qty[sl];
+  rsp->unrested = h->top->rsp_unrested_qty[sl];
   const int n = static_cast<int>(h->fills.size());
   rsp->nfill = n < max_fills ? n : max_fills;
   for (int i = 0; i < rsp->nfill; i++) {
@@ -141,17 +156,23 @@ int pe_issue(void *p, uint16_t symbol, uint8_t op, uint8_t side, uint32_t price,
 void pe_bbo(void *p, uint16_t symbol, uint8_t *bid_v, uint32_t *bid_px, uint32_t *bid_qty,
             uint8_t *ask_v, uint32_t *ask_px, uint32_t *ask_qty) {
   auto *h = static_cast<Handle *>(p);
-  h->top->cmd_valid = 0;
-  h->top->cmd_op = 0;
-  h->top->cmd_symbol = symbol;
+  const int sl = slice_of(symbol);
+  if (sl < 0) {
+    *bid_v = 0;
+    *bid_px = 0;
+    *bid_qty = 0;
+    *ask_v = 0;
+    *ask_px = 0;
+    *ask_qty = 0;
+    return;
+  }
   h->top->eval();
-  const int pipe = static_cast<int>(symbol) % N_PIPES;
-  *bid_v = (h->top->bbo_bid_valid >> pipe) & 1;
-  *bid_px = h->top->bbo_bid_px[pipe];
-  *bid_qty = h->top->bbo_bid_qty[pipe];
-  *ask_v = (h->top->bbo_ask_valid >> pipe) & 1;
-  *ask_px = h->top->bbo_ask_px[pipe];
-  *ask_qty = h->top->bbo_ask_qty[pipe];
+  *bid_v = (h->top->bbo_bid_valid >> sl) & 1;
+  *bid_px = h->top->bbo_bid_px[sl];
+  *bid_qty = h->top->bbo_bid_qty[sl];
+  *ask_v = (h->top->bbo_ask_valid >> sl) & 1;
+  *ask_px = h->top->bbo_ask_px[sl];
+  *ask_qty = h->top->bbo_ask_qty[sl];
 }
 
 }  // extern "C"
