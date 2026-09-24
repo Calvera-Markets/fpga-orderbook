@@ -1,10 +1,19 @@
 import unittest
 
 from book import SIDE_BUY, SIDE_SELL
+from slice_table import SlicedVenue
 from venue import Venue
 
 
 class TestOidMap(unittest.TestCase):
+    def test_place_is_slice_price_slot(self) -> None:
+        v = SlicedVenue()
+        v.limit(1, SIDE_BUY, 10, 5, 7)
+        self.assertEqual(v.oids.place(7), (1, 10, 0))
+        r = v.cancel(7)
+        self.assertTrue(r.ok)
+        self.assertIsNone(v.oids.place(7))
+
     def test_cancel_without_symbol(self) -> None:
         v = Venue()
         v.limit(4, SIDE_BUY, 10, 5, 77)

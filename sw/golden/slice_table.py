@@ -58,6 +58,13 @@ class _OidUnion:
                 return hit
         return None
 
+    def place(self, oid: int) -> tuple[int, int, int] | None:
+        for venue in self._slices:
+            hit = venue.oids.place(oid)
+            if hit is not None:
+                return hit
+        return None
+
 
 class SlicedVenue:
     """Same call shape as PartitionedVenue. pipe() is the slice id."""
