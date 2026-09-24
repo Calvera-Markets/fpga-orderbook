@@ -12,7 +12,7 @@ OID_TOP := oid_hash
 TICK_TOP := tick_array
 TREE_TOP := oid_tree
 WALK_TOP := walker_fifo
-FRAME_TOP := order_frame
+FRAME_TOP := frame_top
 FIFO_DIR := obj_dir/price_level_fifo
 BOOK_DIR := obj_dir/book
 BANK_DIR := obj_dir/bank
@@ -24,7 +24,7 @@ OID_DIR := obj_dir/oid_hash
 TICK_DIR := obj_dir/tick_array
 TREE_DIR := obj_dir/oid_tree
 WALK_DIR := obj_dir/walker_fifo
-FRAME_DIR := obj_dir/order_frame
+FRAME_DIR := obj_dir/frame
 FIFO_BIN := $(FIFO_DIR)/$(FIFO_TOP)_sim
 BOOK_BIN := $(BOOK_DIR)/$(BOOK_TOP)_sim
 BANK_BIN := $(BANK_DIR)/$(BANK_TOP)_sim
@@ -150,9 +150,9 @@ $(WALK_BIN): rtl/book/walker_fifo.sv tb/walker_fifo_tb.cpp
 sim-walk: $(WALK_BIN)
 	$(WALK_BIN)
 
-$(FRAME_BIN): rtl/pkg/exch_pkg.sv rtl/gateway/order_frame.sv tb/order_frame_tb.cpp
+$(FRAME_BIN): rtl/pkg/exch_pkg.sv rtl/gateway/order_frame.sv rtl/gateway/session_table.sv rtl/gateway/frame_top.sv tb/order_frame_tb.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $(FRAME_TOP) -Mdir $(FRAME_DIR) -o $(FRAME_TOP)_sim \
-		rtl/pkg/exch_pkg.sv rtl/gateway/order_frame.sv tb/order_frame_tb.cpp
+		rtl/pkg/exch_pkg.sv rtl/gateway/order_frame.sv rtl/gateway/session_table.sv rtl/gateway/frame_top.sv tb/order_frame_tb.cpp
 
 sim-frame: $(FRAME_BIN)
 	$(FRAME_BIN)

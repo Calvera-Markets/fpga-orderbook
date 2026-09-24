@@ -9,18 +9,20 @@ SIDE_SELL = 1
 OP_LIMIT = 0
 OP_CANCEL = 1
 
-# session, op, side, symbol, price, qty, oid
-_FMT = "<BBBHIIQ"
+# session, op, side, symbol, seq, price, qty, oid
+_FMT = "<BBBHIIIQ"
 
 
-def pack(session: int, op: int, side: int, symbol: int, price: int, qty: int, oid: int) -> bytes:
+def pack(session: int, op: int, side: int, symbol: int, price: int, qty: int, oid: int,
+         seq: int = 1) -> bytes:
     return struct.pack(_FMT, session & 0xFF, op & 0xFF, side & 0xFF, symbol & 0xFFFF,
-                       price & 0xFFFFFFFF, qty & 0xFFFFFFFF, oid & 0xFFFFFFFFFFFFFFFF)
+                       seq & 0xFFFFFFFF, price & 0xFFFFFFFF, qty & 0xFFFFFFFF,
+                       oid & 0xFFFFFFFFFFFFFFFF)
 
 
-def unpack(word: bytes) -> tuple[int, int, int, int, int, int, int]:
-    session, op, side, symbol, price, qty, oid = struct.unpack(_FMT, word)
-    return session, op, side, symbol, price, qty, oid
+def unpack(word: bytes) -> tuple[int, int, int, int, int, int, int, int]:
+    session, op, side, symbol, seq, price, qty, oid = struct.unpack(_FMT, word)
+    return session, op, side, symbol, seq, price, qty, oid
 
 
 def from_line(line: str) -> bytes:
