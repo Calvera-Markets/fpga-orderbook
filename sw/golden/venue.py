@@ -21,7 +21,7 @@ class Venue:
 
     def _track(self, symbol: int, oid: int, rsp: BookRsp, price: int = 0) -> BookRsp:
         if rsp.rest_qty > 0:
-            self.oids.insert(oid, symbol, price=price, slot=0)
+            self.oids.insert(oid, symbol, price=price, slot=rsp.slot)
         book = self.book(symbol)
         for fill in rsp.fills:
             if not book.has_oid(fill.maker_oid):

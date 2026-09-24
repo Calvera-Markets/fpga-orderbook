@@ -65,6 +65,15 @@ class TestBook(unittest.TestCase):
         self.assertEqual(r.rest_qty, 10)
         self.assertEqual((b.bbo_bid_px, b.bbo_bid_qty), (99, 8))
 
+    def test_cancel_middle_keeps_time(self) -> None:
+        b = Book()
+        b.limit(SIDE_BUY, 100, 1, 1)
+        b.limit(SIDE_BUY, 100, 1, 2)
+        b.limit(SIDE_BUY, 100, 1, 3)
+        b.cancel(2)
+        r = b.limit(SIDE_SELL, 100, 2, 9)
+        self.assertEqual([f.maker_oid for f in r.fills], [1, 3])
+
     def test_cancel_missing(self) -> None:
         b = Book()
         b.limit(SIDE_BUY, 100, 10, 1)

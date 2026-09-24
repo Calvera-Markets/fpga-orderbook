@@ -34,6 +34,7 @@ class BookRsp:
     rest_qty: int = 0
     unrested_qty: int = 0
     fills: list[Fill] = field(default_factory=list)
+    slot: int = 0
 
 
 class Book:
@@ -101,6 +102,7 @@ class Book:
         rest = 0
         unrested = 0
         ok = True
+        slot = 0
         if remaining:
             book = self.bids if side == SIDE_BUY else self.asks
             if price >= PRICE_WIN:
@@ -118,6 +120,7 @@ class Book:
                 r = book[price].add(oid, remaining)
                 if r.ok:
                     rest = remaining
+                    slot = book[price].depth - 1
                 else:
                     unrested = remaining
                     ok = False
@@ -130,6 +133,7 @@ class Book:
             rest_qty=rest,
             unrested_qty=unrested,
             fills=fills,
+            slot=slot,
         )
 
     def has_oid(self, oid: int) -> bool:
