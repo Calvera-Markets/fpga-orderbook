@@ -54,6 +54,7 @@ void reset(Handle *h) {
   h->top->cmd_op = 0;
   h->top->cmd_side = 0;
   h->top->evt_ready = (1u << N_SLICES) - 1u;
+  h->top->lookup_oid = 0;
   for (int s = 0; s < N_SLICES; s++) {
     h->top->cmd_price[s] = 0;
     h->top->cmd_qty[s] = 0;
@@ -109,7 +110,14 @@ void pe_free(void *p) {
 int pe_issue(void *p, uint16_t symbol, uint8_t op, uint8_t side, uint32_t price,
              uint32_t qty, uint64_t oid, pe_rsp *rsp, pe_fill *fills, int max_fills) {
   auto *h = static_cast<Handle *>(p);
-  const int sl = slice_of(symbol);
+  int sl = slice_of(symbol);
+  if (op == 1) {
+    h->top->lookup_oid = oid;
+    tick(h);
+    if (h->top->lookup_hit) {
+      sl = h->top->lookup_slice;
+    }
+  }
   if (sl < 0) {
     return -1;
   }

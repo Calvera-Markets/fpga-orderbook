@@ -284,6 +284,22 @@ void test_price_miss_does_not_stall_other_slice() {
   expect(saw0, "missed price eventually rests");
 }
 
+void test_lookup_names_the_slice() {
+  reset();
+  issue(0, BOOK_LIMIT, SIDE_BUY, 40, 3, 7);
+  tick();
+  top->lookup_oid = 7;
+  top->eval();
+  expect(top->lookup_hit, "resting oid is in the map");
+  expect_eq_u64(top->lookup_slice, 0, "oid sits on slice 0");
+  expect_eq_u64(top->lookup_price, 40, "oid remembers the price");
+  expect(bit(top->cmd_ready, 1), "slice 1 stays ready");
+  Rsp c = issue(top->lookup_slice, BOOK_CANCEL, SIDE_BUY, 0, 0, 7);
+  expect(c.ok, "cancel enters the looked-up slice");
+  expect(!bit(top->bbo_bid_valid, 0), "slice 0 bid is gone");
+  expect(bit(top->cmd_ready, 1), "cancel did not busy slice 1");
+}
+
 void test_reslice_when_idle() {
   reset();
   top->cfg_slice = 3;
@@ -307,6 +323,7 @@ int main(int argc, char **argv) {
   test_sweep_does_not_stall_other_slice();
   test_price_miss_does_not_stall_other_slice();
   test_algo_nak_is_local();
+  test_lookup_names_the_slice();
   test_reslice_when_idle();
   if (errors == 0) {
     std::cout << "slice_engine: " << checks << " checks passed\n";

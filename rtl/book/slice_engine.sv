@@ -57,7 +57,13 @@ module slice_engine
   output logic [QTY_W-1:0]    bbo_ask_qty [N_SLICES],
 
   output logic [N_SLICES-1:0] touch_bid_valid,
-  output logic [N_SLICES-1:0] touch_ask_valid
+  output logic [N_SLICES-1:0] touch_ask_valid,
+
+  input  wire [OID_W-1:0]     lookup_oid,
+  output wire                 lookup_hit,
+  output wire [7:0]           lookup_slice,
+  output wire [PRICE_W-1:0]   lookup_price,
+  output wire [3:0]           lookup_slot
 );
 
   logic [SYMBOL_W-1:0] sym_q [N_SLICES];
@@ -69,6 +75,7 @@ module slice_engine
   logic [N_SLICES-1:0] miss_grant;
   logic [N_SLICES-1:0] bid_hit, ask_hit;
   logic [N_SLICES-1:0] bid_touch_v, ask_touch_v;
+  logic [PRICE_W-1:0]  acc_px [N_SLICES];
 
   logic [N_SLICES-1:0] book_cmd_valid;
   logic [N_SLICES-1:0] book_cmd_ready;
@@ -134,6 +141,7 @@ module slice_engine
         nak_oid[i]   <= '0;
         miss_left[i] <= 3'd0;
         miss_grant[i]<= 1'b0;
+        acc_px[i]    <= '0;
       end
     end else begin
       for (int i = 0; i < N_SLICES; i++) begin
@@ -145,7 +153,10 @@ module slice_engine
                      !(cmd_side[i] == SIDE_SELL ? ask_hit[i] : bid_hit[i])) begin
           miss_left[i] <= 3'd4;
         end
-        if (book_cmd_valid[i]) miss_grant[i] <= 1'b0;
+        if (book_cmd_valid[i]) begin
+          miss_grant[i] <= 1'b0;
+          acc_px[i]     <= cmd_price[i];
+        end
         if (cmd_op[i] == BOOK_LIMIT &&
             (cmd_side[i] == SIDE_SELL ? ask_hit[i] : bid_hit[i])) begin
           miss_grant[i] <= 1'b0;
@@ -214,6 +225,41 @@ module slice_engine
       );
     end
   endgenerate
+
+  logic               place_wr;
+  logic [OID_W-1:0]   place_oid;
+  logic [7:0]         place_slice;
+  logic [PRICE_W-1:0] place_px;
+
+  always_comb begin
+    place_wr    = 1'b0;
+    place_oid   = '0;
+    place_slice = '0;
+    place_px    = '0;
+    for (int i = 0; i < N_SLICES; i++) begin
+      if (!place_wr && book_rsp_valid[i] && book_rsp_rest[i] != '0) begin
+        place_wr    = 1'b1;
+        place_oid   = book_rsp_oid[i];
+        place_slice = 8'(i);
+        place_px    = acc_px[i];
+      end
+    end
+  end
+
+  oid_hash u_oids (
+    .clk, .rst_n,
+    .wr_en     (place_wr),
+    .wr_clear  (1'b0),
+    .wr_oid    (place_oid),
+    .wr_slice  (place_slice),
+    .wr_price  (place_px),
+    .wr_slot   (4'd0),
+    .rd_oid    (lookup_oid),
+    .hit       (lookup_hit),
+    .rd_slice  (lookup_slice),
+    .rd_price  (lookup_price),
+    .rd_slot   (lookup_slot)
+  );
 
 endmodule
 
