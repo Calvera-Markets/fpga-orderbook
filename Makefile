@@ -1,3 +1,4 @@
+Agent pid 54851
 VERILATOR ?= verilator
 COMMON_RTL := rtl/pkg/exch_pkg.sv rtl/book/price_level_fifo.sv
 
@@ -5,14 +6,17 @@ FIFO_TOP := price_level_fifo
 BOOK_TOP := one_symbol_book
 BANK_TOP := symbol_bank
 PART_TOP := partitioned_engine
+SLICE_TOP := slice_engine
 FIFO_DIR := obj_dir/price_level_fifo
 BOOK_DIR := obj_dir/book
 BANK_DIR := obj_dir/bank
 PART_DIR := obj_dir/part
+SLICE_DIR := obj_dir/slice
 FIFO_BIN := $(FIFO_DIR)/$(FIFO_TOP)_sim
 BOOK_BIN := $(BOOK_DIR)/$(BOOK_TOP)_sim
 BANK_BIN := $(BANK_DIR)/$(BANK_TOP)_sim
 PART_BIN := $(PART_DIR)/$(PART_TOP)_sim
+SLICE_BIN := $(SLICE_DIR)/$(SLICE_TOP)_sim
 BOOK_RTL := $(COMMON_RTL) rtl/book/one_symbol_book.sv
 
 VFLAGS := --cc --exe --build -sv -Wall -CFLAGS "-std=c++17 -Wall"
@@ -24,7 +28,7 @@ ifeq ($(shell uname),Darwin)
 LIBLDFLAGS := -Wl,-U,__Z15vl_time_stamp64v,-U,__Z13sc_time_stampv,-U,_vlog_startup_routines
 endif
 
-.PHONY: all help golden sim sim-fifo sim-book sim-bank sim-part lib rtl-gw test clean run
+.PHONY: all help golden sim sim-fifo sim-book sim-bank sim-part sim-slice lib rtl-gw test clean run
 
 all: test
 
@@ -34,6 +38,7 @@ help:
 	@echo "make sim-book  one-symbol book Verilator bench"
 	@echo "make sim-bank  multi-symbol bank (one pipe)"
 	@echo "make sim-part  partitioned engine (K pipes)"
+	@echo "make sim-slice slice engine (one book per slice, private ports)"
 	@echo "make lib       Verilator partitioned_engine as libpe.so (gateway --engine rtl)"
 	@echo "make sim       all RTL benches"
 	@echo "make test      golden + all RTL sims + rtl gateway"
@@ -60,6 +65,10 @@ $(PART_BIN): $(PART_RTL) tb/partitioned_engine_tb.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $(PART_TOP) -Mdir $(PART_DIR) -o $(PART_TOP)_sim \
 		$(PART_RTL) tb/partitioned_engine_tb.cpp
 
+$(SLICE_BIN): $(BOOK_RTL) rtl/book/slice_engine.sv tb/slice_engine_tb.cpp
+	$(VERILATOR) $(VFLAGS) --top-module $(SLICE_TOP) -Mdir $(SLICE_DIR) -o $(SLICE_TOP)_sim \
+		$(BOOK_RTL) rtl/book/slice_engine.sv tb/slice_engine_tb.cpp
+
 sim-fifo: $(FIFO_BIN)
 	$(FIFO_BIN)
 
@@ -72,7 +81,10 @@ sim-bank: $(BANK_BIN)
 sim-part: $(PART_BIN)
 	$(PART_BIN)
 
-sim: sim-fifo sim-book sim-bank sim-part
+sim-slice: $(SLICE_BIN)
+	$(SLICE_BIN)
+
+sim: sim-fifo sim-book sim-bank sim-part sim-slice
 
 $(LIB_DIR)/Vpartitioned_engine.mk: $(PART_RTL)
 	$(VERILATOR) --cc --build -sv -Wall --top-module $(PART_TOP) -Mdir $(LIB_DIR) \
