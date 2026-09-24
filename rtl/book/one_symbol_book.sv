@@ -213,6 +213,8 @@ module one_symbol_book
   logic [QTY_W-1:0]   remaining;
   logic [QTY_W-1:0]   filled_acc, rest_acc, unrested_acc;
   logic               use_pr;
+  logic               use_mid;
+  logic [PRICE_W-1:0] mid_px_l;
   logic [CNT_W-1:0]   drain_n, drain_i;
   logic [OID_W-1:0]   drain_oid [MAX_ORDERS];
   logic [QTY_W-1:0]   drain_qty [MAX_ORDERS];
@@ -341,13 +343,26 @@ module one_symbol_book
 
   assign idle = both_idle;
 
+  wire [PRICE_W-1:0] mid_px;
+  wire               mid_ok;
+  walker_mid u_mid (
+    .bid    (bbo_bid_px_c),
+    .ask    (bbo_ask_px_c),
+    .bid_ok (bbo_bid_valid_c),
+    .ask_ok (bbo_ask_valid_c),
+    .px     (mid_px),
+    .ok     (mid_ok)
+  );
+
   wire crosses_bbo = (cmd_side == SIDE_BUY)
       ? (bbo_ask_valid_c && cmd_price >= bbo_ask_px_c)
       : (bbo_bid_valid_c && cmd_price <= bbo_bid_px_c);
   wire crosses_inflight = (cmd_side == SIDE_BUY)
       ? (ask_rest_busy && cmd_price >= ask_px_l)
       : (bid_rest_busy && cmd_price <= bid_px_l);
-  wire would_cross = crosses_bbo || crosses_inflight;
+  wire would_cross = (algo == ALGO_MIDPOINT)
+      ? (mid_ok && crosses_bbo)
+      : (crosses_bbo || crosses_inflight);
 
   wire side_idle = (cmd_side == SIDE_BUY) ? (bid_st == ST_IDLE) : (ask_st == ST_IDLE);
   wire rest_ready = side_idle && taker_idle && !would_cross;
@@ -358,9 +373,10 @@ module one_symbol_book
       (cmd_op == BOOK_LIMIT) ? rest_ready :
       both_idle);
 
-  wire latched_crosses = (latched_side == SIDE_BUY)
+  wire latched_crosses_px = (latched_side == SIDE_BUY)
       ? (bbo_ask_valid_c && latched_px >= bbo_ask_px_c)
       : (bbo_bid_valid_c && latched_px <= bbo_bid_px_c);
+  wire latched_crosses = use_mid ? (mid_ok && latched_crosses_px) : latched_crosses_px;
 
   wire rest_level_full = rest_found && !rest_alloc &&
       ((latched_side == SIDE_BUY) ? bid_full[rest_idx] : ask_full[rest_idx]);
@@ -506,6 +522,8 @@ module one_symbol_book
       latched_px     <= '0;
       latched_oid    <= '0;
       use_pr         <= 1'b0;
+      use_mid        <= 1'b0;
+      mid_px_l       <= '0;
       drain_n        <= '0;
       drain_i        <= '0;
       for (int i = 0; i < MAX_ORDERS; i++) begin
@@ -591,6 +609,8 @@ module one_symbol_book
           unrested_acc <= '0;
           rsp_ok       <= 1'b1;
           use_pr       <= (algo == ALGO_PRORATA);
+          use_mid      <= (algo == ALGO_MIDPOINT);
+          mid_px_l     <= mid_px;
           mt_st        <= MT_ISSUE;
         end else if (cmd_op == BOOK_LIMIT && cmd_side == SIDE_BUY) begin
           bid_px_l     <= cmd_price;
@@ -689,7 +709,7 @@ module one_symbol_book
             evt_valid     <= 1'b1;
             evt_maker_oid <= mt_hold_maker;
             evt_taker_oid <= latched_oid;
-            evt_price     <= match_px;
+            evt_price     <= use_mid ? mid_px_l : match_px;
             evt_qty       <= mt_hold_qty;
             wb_st         <= WB_FILL;
             mt_st         <= MT_IDLE;
@@ -707,7 +727,7 @@ module one_symbol_book
               evt_valid     <= 1'b1;
               evt_maker_oid <= drain_oid[drain_i[IDX_W-1:0]];
               evt_taker_oid <= latched_oid;
-              evt_price     <= match_px;
+              evt_price     <= use_mid ? mid_px_l : match_px;
               evt_qty       <= drain_qty[drain_i[IDX_W-1:0]];
               wb_st         <= WB_FILL;
               drain_i       <= drain_i + 1'b1;

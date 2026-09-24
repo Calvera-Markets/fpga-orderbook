@@ -127,6 +127,7 @@ void set_valid(int s, bool v) {
 
 void fire(int s, uint8_t op, uint8_t side, uint32_t price, uint32_t qty, uint64_t oid) {
   present(s, op, side, price, qty, oid);
+  top->eval();
   int guard = 0;
   while (!bit(top->cmd_ready, s) && guard++ < 10000) {
     tick();
@@ -293,20 +294,46 @@ void test_prorata_splits_the_queue() {
   expect_eq_u64(top->bbo_ask_qty[0], 6, "price-time leaves 1 and 5");
 }
 
-void test_midpoint_still_naks() {
+void test_midpoint_trades_between_the_sides() {
   reset();
-  issue(0, BOOK_LIMIT, SIDE_BUY, 15, 2, 40);
-  cfg_algo(3, ALGO_MIDPOINT);
-  present(3, BOOK_LIMIT, SIDE_BUY, 15, 9, 41);
-  set_valid(3, true);
-  tick();
-  set_valid(3, false);
-  expect(bit(top->rsp_valid, 3), "midpoint nak rsp");
-  expect(!bit(top->rsp_ok, 3), "midpoint still naks");
-  expect_eq_u64(top->rsp_filled_qty[3], 0, "nak fills nothing");
-  expect(!bit(top->bbo_bid_valid, 3), "nak does not rest");
-  Rsp c = issue(0, BOOK_CANCEL, SIDE_BUY, 0, 0, 40);
-  expect(c.ok, "other slice still cancels");
+  cfg_algo(2, ALGO_MIDPOINT);
+  issue(2, BOOK_LIMIT, SIDE_BUY, 100, 1, 1);
+  issue(2, BOOK_LIMIT, SIDE_SELL, 110, 1, 2);
+  issue(0, BOOK_LIMIT, SIDE_BUY, 100, 1, 10);
+  issue(0, BOOK_LIMIT, SIDE_SELL, 110, 1, 11);
+  fills.clear();
+  evt_seen = 0;
+  Rsp mid = issue(2, BOOK_LIMIT, SIDE_BUY, 110, 1, 3);
+  expect(mid.ok, "midpoint buy trades");
+  expect_eq_u64(mid.filled, 1, "midpoint filled 1");
+  expect_eq_u64(fills.size(), 1, "one midpoint fill");
+  if (!fills.empty()) {
+    expect_eq_u64(fills[0].price, 105, "midpoint is 105");
+    expect_eq_u64(fills[0].maker, 2, "midpoint takes the ask");
+    expect_eq_u64(fills[0].slice, 2, "midpoint fill stays on its slice");
+  }
+  fills.clear();
+  evt_seen = 0;
+  Rsp fifo = issue(0, BOOK_LIMIT, SIDE_BUY, 110, 1, 12);
+  expect_eq_u64(fifo.filled, 1, "price-time filled 1");
+  expect_eq_u64(fills.size(), 1, "one price-time fill");
+  if (!fills.empty()) {
+    expect_eq_u64(fills[0].price, 110, "price-time trades at the ask");
+    expect_eq_u64(fills[0].slice, 0, "price-time fill stays on slice 0");
+  }
+
+  reset();
+  cfg_algo(2, ALGO_MIDPOINT);
+  issue(2, BOOK_LIMIT, SIDE_SELL, 110, 1, 2);
+  fills.clear();
+  evt_seen = 0;
+  Rsp rested = issue(2, BOOK_LIMIT, SIDE_BUY, 110, 1, 3);
+  expect(rested.ok, "midpoint with one side rests");
+  expect_eq_u64(rested.filled, 0, "missing side does not trade");
+  expect_eq_u64(rested.rest, 1, "order rests as a limit");
+  expect(fills.empty(), "no fill without both sides");
+  expect_eq_u64(top->bbo_ask_qty[2], 1, "ask was not taken");
+  expect(bit(top->bbo_bid_valid, 2), "buy rested on the bid");
 }
 
 void test_price_miss_does_not_stall_other_slice() {
@@ -403,7 +430,7 @@ int main(int argc, char **argv) {
   test_sweep_does_not_stall_other_slice();
   test_price_miss_does_not_stall_other_slice();
   test_prorata_splits_the_queue();
-  test_midpoint_still_naks();
+  test_midpoint_trades_between_the_sides();
   test_lookup_names_the_slice();
   test_cold_lookup_does_not_stall();
   test_reslice_when_idle();

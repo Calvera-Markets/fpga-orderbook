@@ -5,9 +5,8 @@
 // A walk or a held fill on slice A does not change cmd_ready or evt_ready
 // on slice B. Spec: design/sharded-matcher.md
 //
-// The book inside the slice is the resident price-time book, or pro-rata
-// when the slice is set to that rule. Midpoint is still accepted and NAKed
-// here. The book is not touched for a rule it does not run.
+// The book inside the slice runs price-time, pro-rata, or midpoint.
+// Any other rule is accepted and NAKed here. The book is not touched.
 module slice_engine
   import exch_pkg::*;
 #(
@@ -106,7 +105,8 @@ module slice_engine
 
   always_comb begin
     for (int i = 0; i < N_SLICES; i++) begin
-      fifo_algo[i]        = (algo_q[i] == ALGO_FIFO) || (algo_q[i] == ALGO_PRORATA);
+      fifo_algo[i]        = (algo_q[i] == ALGO_FIFO) || (algo_q[i] == ALGO_PRORATA)
+          || (algo_q[i] == ALGO_MIDPOINT);
       slice_symbol[i]     = sym_q[i];
       slice_algo[i]       = algo_q[i];
       slice_idle[i]       = book_idle[i] && !nak_busy[i];
