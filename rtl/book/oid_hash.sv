@@ -30,14 +30,20 @@ module oid_hash
   logic [3:0]         slot_m  [0:DEPTH-1];
   logic               valid_m [0:DEPTH-1];
 
-  wire [IDX-1:0] wi = wr_oid[IDX-1:0];
-  wire [IDX-1:0] ri = rd_oid[IDX-1:0];
+  wire [IDX-1:0] b0 = wr_oid[IDX-1:0];
+  wire [IDX-1:0] b1 = b0 + 1'b1;
+  wire [IDX-1:0] wi = (!valid_m[b0] || oid_m[b0] == wr_oid) ? b0 : b1;
+  wire [IDX-1:0] ci = (valid_m[b0] && oid_m[b0] == wr_oid) ? b0 : b1;
+  wire [IDX-1:0] r0 = rd_oid[IDX-1:0];
+  wire [IDX-1:0] r1 = r0 + 1'b1;
+  wire           hit0 = valid_m[r0] && (oid_m[r0] == rd_oid);
+  wire           hit1 = valid_m[r1] && (oid_m[r1] == rd_oid);
 
   always_ff @(posedge clk) begin
     if (!rst_n) begin
       for (int i = 0; i < DEPTH; i++) valid_m[i] <= 1'b0;
-    end else if (wr_clear && valid_m[wi] && oid_m[wi] == wr_oid) begin
-      valid_m[wi] <= 1'b0;
+    end else if (wr_clear && valid_m[ci] && oid_m[ci] == wr_oid) begin
+      valid_m[ci] <= 1'b0;
     end else if (wr_en) begin
       valid_m[wi] <= 1'b1;
       oid_m[wi]   <= wr_oid;
@@ -47,10 +53,10 @@ module oid_hash
     end
   end
 
-  assign hit      = valid_m[ri] && (oid_m[ri] == rd_oid);
-  assign rd_slice = slice_m[ri];
-  assign rd_price = price_m[ri];
-  assign rd_slot  = slot_m[ri];
+  assign hit      = hit0 || hit1;
+  assign rd_slice = hit0 ? slice_m[r0] : slice_m[r1];
+  assign rd_price = hit0 ? price_m[r0] : price_m[r1];
+  assign rd_slot  = hit0 ? slot_m[r0]  : slot_m[r1];
 
 endmodule
 

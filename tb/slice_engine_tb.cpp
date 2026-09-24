@@ -308,20 +308,22 @@ void test_cold_lookup_does_not_stall() {
   issue(0, BOOK_LIMIT, SIDE_BUY, 40, 1, 7);
   issue(0, BOOK_LIMIT, SIDE_BUY, 40, 1, 23);
   tick();
-  top->lookup_oid = 23;
   tick();
   top->lookup_oid = 7;
   top->eval();
-  expect(!top->lookup_hit, "displaced id misses the hot hash");
+  expect(top->lookup_hit, "7 stays in its bucket");
+  top->lookup_oid = 23;
+  top->eval();
+  expect(top->lookup_hit, "23 stays in the next bucket");
+  top->lookup_oid = 100;
+  top->eval();
+  expect(!top->lookup_hit, "unknown id misses the hot hash");
   expect(bit(top->cmd_ready, 1), "slice 1 ready during the tail wait");
   Rsp other = issue(1, BOOK_LIMIT, SIDE_SELL, 80, 1, 99);
   expect(other.ok, "slice 1 rested during the cold lookup");
   int guard = 0;
-  while (!top->lookup_hit && guard++ < 20) {
-    tick();
-  }
-  expect(top->lookup_hit, "tail finds the displaced id");
-  expect_eq_u64(top->lookup_slice, 0, "displaced id is still slice 0");
+  while (guard++ < 6) tick();
+  expect(!top->lookup_hit, "unknown id is not invented by the tail");
 }
 
 void test_reslice_when_idle() {

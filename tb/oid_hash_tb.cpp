@@ -33,9 +33,18 @@ int main(int argc, char **argv) {
     fail("hit place");
   top->rd_oid = 8; top->eval();
   if (top->hit) fail("unknown id");
+  top->wr_en = 1; top->wr_oid = 23; top->wr_slice = 2; top->wr_price = 11; top->wr_slot = 1;
+  tick();
+  top->wr_en = 0;
+  top->rd_oid = 7; top->eval();
+  if (!top->hit || top->rd_slice != 1) fail("7 survived the same nibble");
+  top->rd_oid = 23; top->eval();
+  if (!top->hit || top->rd_slice != 2 || top->rd_price != 11) fail("23 is the next bucket");
   top->wr_clear = 1; top->wr_oid = 7; tick(); top->wr_clear = 0;
   top->rd_oid = 7; top->eval();
   if (top->hit) fail("deleted id");
+  top->rd_oid = 23; top->eval();
+  if (!top->hit) fail("23 remains");
   if (errors == 0) std::cout << "oid_hash: passed\n";
   delete top;
   return errors == 0 ? 0 : 1;
