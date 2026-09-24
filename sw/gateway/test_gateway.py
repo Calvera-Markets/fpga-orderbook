@@ -101,6 +101,33 @@ class TestExchangeWal(unittest.TestCase):
             self.assertEqual(c2[0]["seq"], 1)
 
 
+class TestAuction(unittest.TestCase):
+    def test_batch_is_ordinary_limits_after_an_off_chip_gap(self) -> None:
+        from auction import SIDE_BUY, SIDE_SELL, Auction
+        from slice_table import SlicedVenue
+
+        auc = Auction()
+        auc.add(1, SIDE_BUY, 2, 1)
+        auc.add(1, SIDE_BUY, 1, 2)
+        auc.add(1, SIDE_SELL, 2, 3)
+        tape = [("slice", {"op": "limit", "symbol": 2, "oid": 9})]
+        tape.append(("host", "auction"))
+        cmds = auc.cross(100)
+        self.assertEqual(len(cmds), 3)
+        for cmd in cmds:
+            self.assertEqual(cmd["op"], "limit")
+            self.assertNotIn("auction", cmd)
+            self.assertEqual(cmd["price"], 100)
+            tape.append(("slice", cmd))
+        self.assertEqual([kind for kind, _ in tape], ["slice", "host", "slice", "slice", "slice"])
+        venue = SlicedVenue()
+        for cmd in cmds:
+            venue.limit(cmd["symbol"], cmd["side"], cmd["price"], cmd["qty"], cmd["oid"])
+        book = venue.book(1)
+        self.assertEqual(book.bbo_bid_qty, 1)
+        self.assertFalse(book.bbo_ask_valid)
+
+
 class TestHostReject(unittest.TestCase):
     def test_reject_is_on_the_host_and_the_slice(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
