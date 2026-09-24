@@ -63,7 +63,9 @@ module slice_engine
   output wire                 lookup_hit,
   output wire [7:0]           lookup_slice,
   output wire [PRICE_W-1:0]   lookup_price,
-  output wire [3:0]           lookup_slot
+  output wire [3:0]           lookup_slot,
+
+  output logic [PRICE_W-1:0]  wb_px
 );
 
   logic [SYMBOL_W-1:0] sym_q [N_SLICES];
@@ -76,6 +78,11 @@ module slice_engine
   logic [N_SLICES-1:0] bid_hit, ask_hit;
   logic [N_SLICES-1:0] bid_touch_v, ask_touch_v;
   logic [PRICE_W-1:0]  acc_px [N_SLICES];
+  logic [PRICE_W-1:0]  bid_tag [N_SLICES];
+  logic [PRICE_W-1:0]  ask_tag [N_SLICES];
+  logic                store_wr;
+  logic [PRICE_W-1:0]  store_px;
+  logic [2:0]          store_latency;
 
   logic [N_SLICES-1:0] book_cmd_valid;
   logic [N_SLICES-1:0] book_cmd_ready;
@@ -142,8 +149,11 @@ module slice_engine
         miss_left[i] <= 3'd0;
         miss_grant[i]<= 1'b0;
         acc_px[i]    <= '0;
+        store_wr     <= 1'b0;
+        store_px     <= '0;
       end
     end else begin
+      store_wr <= 1'b0;
       for (int i = 0; i < N_SLICES; i++) begin
         if (miss_left[i] != 3'd0) begin
           miss_left[i] <= miss_left[i] - 3'd1;
@@ -151,7 +161,9 @@ module slice_engine
         end else if (fifo_algo[i] && book_cmd_ready[i] && !miss_grant[i] &&
                      cmd_op[i] == BOOK_LIMIT &&
                      !(cmd_side[i] == SIDE_SELL ? ask_hit[i] : bid_hit[i])) begin
-          miss_left[i] <= 3'd4;
+          miss_left[i] <= store_latency;
+          store_wr     <= 1'b1;
+          store_px     <= (cmd_side[i] == SIDE_SELL) ? ask_tag[i] : bid_tag[i];
         end
         if (book_cmd_valid[i]) begin
           miss_grant[i] <= 1'b0;
@@ -213,7 +225,8 @@ module slice_engine
         .set_price (cmd_price[gi]),
         .probe     (cmd_price[gi]),
         .valid     (bid_touch_v[gi]),
-        .hit       (bid_hit[gi])
+        .hit       (bid_hit[gi]),
+        .tag_price (bid_tag[gi])
       );
       touch_tile u_ask_touch (
         .clk, .rst_n,
@@ -221,7 +234,8 @@ module slice_engine
         .set_price (cmd_price[gi]),
         .probe     (cmd_price[gi]),
         .valid     (ask_touch_v[gi]),
-        .hit       (ask_hit[gi])
+        .hit       (ask_hit[gi]),
+        .tag_price (ask_tag[gi])
       );
     end
   endgenerate
@@ -245,6 +259,20 @@ module slice_engine
       end
     end
   end
+
+  logic                store_seen;
+  logic [PRICE_W-1:0]  store_last;
+
+  tile_store u_store (
+    .clk, .rst_n,
+    .wr_en      (store_wr),
+    .wr_px      (store_px),
+    .latency    (store_latency),
+    .last_valid (store_seen),
+    .last_px    (store_last)
+  );
+
+  assign wb_px = store_seen ? store_last : store_last;
 
   wire               hash_hit, tail_hit;
   wire [7:0]         hash_slice, tail_slice;

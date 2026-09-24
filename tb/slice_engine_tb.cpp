@@ -283,6 +283,7 @@ void test_price_miss_does_not_stall_other_slice() {
   expect(saw1, "other slice rested during the miss");
   expect_eq_u64(rest1, 1, "other slice rest qty");
   expect(saw0, "missed price eventually rests");
+  expect_eq_u64(top->wb_px, 50, "evicted touch price was written back");
 }
 
 void test_lookup_names_the_slice() {

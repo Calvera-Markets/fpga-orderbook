@@ -11,22 +11,21 @@ module touch_tile
   input  wire [PRICE_W-1:0]  set_price,
   input  wire [PRICE_W-1:0]  probe,
   output logic               valid,
-  output logic               hit
+  output logic               hit,
+  output logic [PRICE_W-1:0] tag_price
 );
-
-  logic [PRICE_W-1:0] tag;
 
   always_ff @(posedge clk) begin
     if (!rst_n) begin
-      valid <= 1'b0;
-      tag   <= '0;
+      valid     <= 1'b0;
+      tag_price <= '0;
     end else if (set_valid) begin
-      valid <= 1'b1;
-      tag   <= set_price;
+      valid     <= 1'b1;
+      tag_price <= set_price;
     end
   end
 
-  assign hit = !valid || (probe == tag);
+  assign hit = !valid || (probe == tag_price);
 
 endmodule
 
