@@ -13,6 +13,7 @@ module frame_top
   output wire                word_ready,
   input  wire [7:0]          word_session,
   input  wire [31:0]         word_seq,
+  input  wire                word_kill,
   input  wire                word_op,
   input  wire                word_side,
   input  wire [SYMBOL_W-1:0] word_symbol,
@@ -33,9 +34,23 @@ module frame_top
   output wire [OID_W-1:0]    reject_oid
 );
 
+  wire risk_pass;
+  wire risk_reject;
+  wire [7:0] risk_reason;
   wire seq_pass;
   wire seq_reject;
   wire [7:0] seq_reason;
+
+  risk_kill u_risk (
+    .clk, .rst_n,
+    .valid   (word_valid),
+    .session (word_session),
+    .qty     (word_qty),
+    .kill    (word_kill),
+    .pass    (risk_pass),
+    .reject  (risk_reject),
+    .reason  (risk_reason)
+  );
   wire frame_ready;
   wire frame_reject;
   wire [7:0] frame_reason;
@@ -46,7 +61,7 @@ module frame_top
 
   order_frame #(.N(N)) u_frame (
     .clk, .rst_n,
-    .word_valid  (word_valid && seq_pass),
+    .word_valid  (word_valid && risk_pass && seq_pass),
     .word_ready  (frame_ready),
     .word_op, .word_side, .word_symbol, .word_price, .word_qty, .word_oid,
     .cmd_valid, .cmd_ready, .cmd_op, .cmd_side, .cmd_price, .cmd_qty, .cmd_oid,
@@ -58,7 +73,7 @@ module frame_top
 
   session_table u_seq (
     .clk, .rst_n,
-    .valid   (word_valid),
+    .valid   (word_valid && risk_pass),
     .take    (|cmd_valid),
     .session (word_session),
     .seq     (word_seq),
@@ -68,8 +83,8 @@ module frame_top
   );
 
   assign word_ready    = frame_ready;
-  assign reject_valid  = seq_reject || frame_reject;
-  assign reject_reason = seq_reject ? seq_reason : frame_reason;
+  assign reject_valid  = risk_reject || seq_reject || frame_reject;
+  assign reject_reason = risk_reject ? risk_reason : seq_reject ? seq_reason : frame_reason;
   assign reject_oid    = word_oid;
 
 endmodule

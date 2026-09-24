@@ -39,6 +39,7 @@ void reset() {
   top->word_valid = 0;
   top->word_session = 0;
   top->word_seq = 1;
+  top->word_kill = 0;
   top->word_op = 0;
   top->word_side = 0;
   top->word_symbol = 0;
@@ -97,6 +98,36 @@ void test_busy_slice_does_not_hold_the_other() {
   expect(bit(top->cmd_valid, 1) && !bit(top->cmd_valid, 0), "only the free slice sees the word");
 }
 
+void test_risk_and_kill() {
+  reset();
+  int before = commands;
+  set_word(0, 1, 0, 0, 10, 11, 1);
+  top->word_valid = 1;
+  top->eval();
+  expect(top->reject_valid, "qty above the cap is a reject");
+  expect(top->cmd_valid == 0, "cap reject does not drive a slice");
+  tick();
+  expect(commands == before, "cap reject leaves the book port alone");
+  set_word(0, 1, 0, 0, 10, 1, 1);
+  top->eval();
+  expect(bit(top->cmd_valid, 0), "legal qty still uses seq 1");
+  tick();
+  set_word(0, 2, 0, 0, 10, 1, 2);
+  top->word_kill = 1;
+  top->eval();
+  expect(top->reject_valid, "kill word does not trade");
+  expect(top->cmd_valid == 0, "kill does not drive a slice");
+  tick();
+  top->word_kill = 0;
+  set_word(0, 2, 0, 0, 10, 1, 3);
+  top->eval();
+  expect(top->reject_valid, "later word from the killed session is a reject");
+  expect(top->cmd_valid == 0, "killed session stays off the book");
+  set_word(1, 1, 1, 1, 20, 1, 4);
+  top->eval();
+  expect(!top->reject_valid && bit(top->cmd_valid, 1), "another session still trades");
+}
+
 void test_sequence_gap_does_not_enter() {
   reset();
   set_word(0, 1, 0, 0, 10, 1, 1);
@@ -130,6 +161,7 @@ int main(int argc, char **argv) {
   test_two_words_two_cycles();
   test_busy_slice_does_not_hold_the_other();
   test_sequence_gap_does_not_enter();
+  test_risk_and_kill();
   if (errors == 0) std::cout << "order_frame: " << checks << " checks passed\n";
   else std::cout << "order_frame: " << errors << " errors in " << checks << " checks\n";
   delete top;

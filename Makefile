@@ -150,9 +150,9 @@ $(WALK_BIN): rtl/book/walker_fifo.sv tb/walker_fifo_tb.cpp
 sim-walk: $(WALK_BIN)
 	$(WALK_BIN)
 
-$(FRAME_BIN): rtl/pkg/exch_pkg.sv rtl/gateway/order_frame.sv rtl/gateway/session_table.sv rtl/gateway/frame_top.sv tb/order_frame_tb.cpp
+$(FRAME_BIN): rtl/pkg/exch_pkg.sv rtl/gateway/order_frame.sv rtl/gateway/session_table.sv rtl/gateway/risk_kill.sv rtl/gateway/frame_top.sv tb/order_frame_tb.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $(FRAME_TOP) -Mdir $(FRAME_DIR) -o $(FRAME_TOP)_sim \
-		rtl/pkg/exch_pkg.sv rtl/gateway/order_frame.sv rtl/gateway/session_table.sv rtl/gateway/frame_top.sv tb/order_frame_tb.cpp
+		rtl/pkg/exch_pkg.sv rtl/gateway/order_frame.sv rtl/gateway/session_table.sv rtl/gateway/risk_kill.sv rtl/gateway/frame_top.sv tb/order_frame_tb.cpp
 
 sim-frame: $(FRAME_BIN)
 	$(FRAME_BIN)
