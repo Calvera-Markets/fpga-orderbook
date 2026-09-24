@@ -59,7 +59,7 @@ class TestExchangeWal(unittest.TestCase):
             self.assertEqual(b.seq, 3)
             self.assertFalse(b.venue.book(1).bbo_ask_valid)
 
-            p1 = Wal(wal).pipe_path(1)
+            p1 = Wal(wal).slice_path(1)
             before = p1.read_text()
             b.limit(1, SIDE_BUY, 99, 1, 3)
             self.assertTrue(b.venue.book(1).bbo_bid_valid)
@@ -73,8 +73,8 @@ class TestExchangeWal(unittest.TestCase):
             a.limit(1, SIDE_BUY, 100, 10, 1)
             a.limit(2, SIDE_SELL, 100, 10, 2)
             cmds = [x for x in Wal(wal).read_all() if x["type"] == "cmd"]
-            self.assertEqual(cmds[0]["pipe"], 1)
-            self.assertEqual(cmds[1]["pipe"], 2)
+            self.assertEqual(cmds[0]["slice"], 1)
+            self.assertEqual(cmds[1]["slice"], 2)
             self.assertEqual(a.venue.seq[1], 1)
             self.assertEqual(a.venue.seq[2], 1)
             b = Exchange(wal)
@@ -88,11 +88,11 @@ class TestExchangeWal(unittest.TestCase):
             a = Exchange(wal)
             a.limit(1, SIDE_BUY, 100, 10, 1)
             a.limit(2, SIDE_SELL, 100, 10, 2)
-            self.assertFalse(Wal(wal).pipe_path(0).exists())
-            self.assertTrue(Wal(wal).pipe_path(1).exists())
-            self.assertTrue(Wal(wal).pipe_path(2).exists())
-            c1 = [x for x in Wal(wal).read_pipe(1) if x["type"] == "cmd"]
-            c2 = [x for x in Wal(wal).read_pipe(2) if x["type"] == "cmd"]
+            self.assertFalse(Wal(wal).slice_path(0).exists())
+            self.assertTrue(Wal(wal).slice_path(1).exists())
+            self.assertTrue(Wal(wal).slice_path(2).exists())
+            c1 = [x for x in Wal(wal).read_slice(1) if x["type"] == "cmd"]
+            c2 = [x for x in Wal(wal).read_slice(2) if x["type"] == "cmd"]
             self.assertEqual(len(c1), 1)
             self.assertEqual(len(c2), 1)
             self.assertEqual(c1[0]["symbol"], 1)
@@ -107,7 +107,7 @@ class TestCli(unittest.TestCase):
             exch = Exchange(Path(tmp))
             out = handle_line(exch, "LIMIT BUY 1 100 10 1")
             assert out is not None
-            self.assertIn("OK oid=1 filled=0 rest=10 unrested=0 pipe=1", out)
+            self.assertIn("OK oid=1 filled=0 rest=10 unrested=0 slice=1", out)
             self.assertIn("bid=100:10", out)
             out = handle_line(exch, "LIMIT SELL 1 100 10 2")
             assert out is not None
@@ -157,7 +157,7 @@ class TestTickersAndMd(unittest.TestCase):
             exch = Exchange(Path(tmp))
             out = handle_line(exch, "LIMIT BUY 3 10 1 8")
             assert out is not None
-            self.assertIn("pipe=3", out)
+            self.assertIn("slice=3", out)
 
     def test_fill_then_md_trade_order(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

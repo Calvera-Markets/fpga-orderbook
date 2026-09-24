@@ -8,7 +8,7 @@ from venue import Venue
 N_SLICES = 4
 
 
-class SliceAssignError(Exception):
+class SliceAssignError(ValueError):
     pass
 
 

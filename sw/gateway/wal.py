@@ -1,4 +1,4 @@
-"""Append-only JSONL write-ahead log, one file per pipe."""
+"""Append-only JSONL write-ahead log, one file per slice."""
 
 from __future__ import annotations
 
@@ -12,29 +12,29 @@ _GOLDEN = Path(__file__).resolve().parent.parent / "golden"
 if str(_GOLDEN) not in sys.path:
     sys.path.insert(0, str(_GOLDEN))
 
-from partition import N_PIPES  # noqa: E402
+from slice_table import N_SLICES  # noqa: E402
 
 
 class Wal:
-    def __init__(self, dir_path: Path, n_pipes: int = N_PIPES) -> None:
+    def __init__(self, dir_path: Path, n_slices: int = N_SLICES) -> None:
         if dir_path.exists() and dir_path.is_file():
-            raise ValueError(f"WAL must be a directory of pipeN.wal files, not {dir_path}")
+            raise ValueError(f"WAL must be a directory of sliceN.wal files, not {dir_path}")
         self.dir = dir_path
-        self.n_pipes = n_pipes
+        self.n_slices = n_slices
         self.dir.mkdir(parents=True, exist_ok=True)
 
-    def pipe_path(self, pipe: int) -> Path:
-        return self.dir / f"pipe{pipe}.wal"
+    def slice_path(self, slice_id: int) -> Path:
+        return self.dir / f"slice{slice_id}.wal"
 
-    def append(self, rec: dict[str, Any], pipe: int) -> None:
+    def append(self, rec: dict[str, Any], slice_id: int) -> None:
         payload = json.dumps(rec, separators=(",", ":")) + "\n"
-        with self.pipe_path(pipe).open("a") as f:
+        with self.slice_path(slice_id).open("a") as f:
             f.write(payload)
             f.flush()
             os.fsync(f.fileno())
 
-    def read_pipe(self, pipe: int) -> list[dict[str, Any]]:
-        path = self.pipe_path(pipe)
+    def read_slice(self, slice_id: int) -> list[dict[str, Any]]:
+        path = self.slice_path(slice_id)
         if not path.exists():
             return []
         recs: list[dict[str, Any]] = []
@@ -48,6 +48,6 @@ class Wal:
 
     def read_all(self) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
-        for p in range(self.n_pipes):
-            out.extend(self.read_pipe(p))
+        for s in range(self.n_slices):
+            out.extend(self.read_slice(s))
         return out

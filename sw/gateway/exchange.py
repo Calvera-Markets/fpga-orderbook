@@ -1,4 +1,4 @@
-"""Partitioned venue + WAL. seq is per pipe."""
+"""Sliced venue + WAL. seq is per slice."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ if str(_GOLDEN) not in sys.path:
     sys.path.insert(0, str(_GOLDEN))
 
 from book import SIDE_BUY, BookRsp  # noqa: E402
-from partition import PartitionedVenue, pipe_of
+from slice_table import SlicedVenue
 
 from instruments import Instruments
 from wal import Wal
@@ -18,9 +18,9 @@ from wal import Wal
 
 class Exchange:
     def __init__(self, wal_path: Path, engine=None) -> None:
-        self.venue = engine if engine is not None else PartitionedVenue()
+        self.venue = engine if engine is not None else SlicedVenue()
         self.instruments = Instruments()
-        self.wal = Wal(wal_path)
+        self.wal = Wal(wal_path, n_slices=len(self.venue.seq))
         self._replay()
 
     @property
@@ -32,23 +32,27 @@ class Exchange:
         if new:
             self.wal.append(
                 {"type": "instrument", "name": token.upper(), "id": sid},
-                pipe_of(sid),
+                self.venue.pipe(sid),
             )
         return sid
 
     def _replay(self) -> None:
-        for p in range(self.wal.n_pipes):
-            for rec in self.wal.read_pipe(p):
+        for s in range(self.wal.n_slices):
+            for rec in self.wal.read_slice(s):
                 kind = rec.get("type")
                 if kind == "instrument":
                     self.instruments.bind(str(rec["name"]), int(rec["id"]))
                     continue
                 if kind != "cmd":
                     continue
+                sl = int(rec.get("slice", s))
                 op = rec["op"]
                 if op == "limit":
                     symbol = int(rec["symbol"])
                     self.instruments.reserve(symbol)
+                    table = getattr(self.venue, "table", None)
+                    if table is not None:
+                        table.assign(symbol, sl)
                     self.venue.limit(
                         symbol,
                         int(rec["side"]),
@@ -57,27 +61,27 @@ class Exchange:
                         int(rec["oid"]),
                         bump=False,
                     )
-                    self.venue.seq[p] = max(self.venue.seq[p], int(rec["seq"]))
+                    self.venue.seq[sl] = max(self.venue.seq[sl], int(rec["seq"]))
                 elif op == "cancel":
                     oid = int(rec["oid"])
                     symbol = self.venue.oids.get(oid)
                     if symbol is not None:
                         self.instruments.reserve(symbol)
                     self.venue.cancel(oid, bump=False)
-                    self.venue.seq[p] = max(self.venue.seq[p], int(rec["seq"]))
+                    self.venue.seq[sl] = max(self.venue.seq[sl], int(rec["seq"]))
 
-    def _log_cmd(self, rec: dict, pipe: int, seq: int) -> None:
+    def _log_cmd(self, rec: dict, slice_id: int, seq: int) -> None:
         rec = dict(rec)
         rec["type"] = "cmd"
-        rec["pipe"] = pipe
+        rec["slice"] = slice_id
         rec["seq"] = seq
-        self.wal.append(rec, pipe)
+        self.wal.append(rec, slice_id)
 
-    def _log_result(self, rsp: BookRsp, pipe: int, seq: int) -> None:
+    def _log_result(self, rsp: BookRsp, slice_id: int, seq: int) -> None:
         self.wal.append(
             {
                 "type": "rsp",
-                "pipe": pipe,
+                "slice": slice_id,
                 "seq": seq,
                 "ok": rsp.ok,
                 "oid": rsp.oid,
@@ -85,20 +89,20 @@ class Exchange:
                 "rest": rsp.rest_qty,
                 "unrested": rsp.unrested_qty,
             },
-            pipe,
+            slice_id,
         )
         for fill in rsp.fills:
             self.wal.append(
                 {
                     "type": "fill",
-                    "pipe": pipe,
+                    "slice": slice_id,
                     "seq": seq,
                     "maker": fill.maker_oid,
                     "taker": fill.taker_oid,
                     "price": fill.price,
                     "qty": fill.qty,
                 },
-                pipe,
+                slice_id,
             )
 
     def limit(self, symbol: int, side: int, price: int, qty: int, oid: int) -> BookRsp:

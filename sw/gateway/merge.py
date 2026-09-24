@@ -10,4 +10,4 @@ from __future__ import annotations
 def with_pipe(status_line: str, pipe: int | None) -> str:
     if pipe is None:
         return status_line
-    return f"{status_line} pipe={pipe}"
+    return f"{status_line} slice={pipe}"

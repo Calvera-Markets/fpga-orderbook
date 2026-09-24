@@ -32,7 +32,7 @@ class TestRtlGateway(unittest.TestCase):
             out = handle_line(exch, "LIMIT SELL 1 100 10 1")
             assert out is not None
             self.assertIn("OK oid=1", out)
-            self.assertIn("pipe=1", out)
+            self.assertIn("slice=1", out)
             self.assertIn("MD BBO", out)
             out = handle_line(exch, "LIMIT BUY 1 100 4 2")
             assert out is not None
