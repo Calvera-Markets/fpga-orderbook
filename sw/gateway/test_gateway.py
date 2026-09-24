@@ -101,6 +101,23 @@ class TestExchangeWal(unittest.TestCase):
             self.assertEqual(c2[0]["seq"], 1)
 
 
+class TestHostReject(unittest.TestCase):
+    def test_reject_is_on_the_host_and_the_slice(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            wal = Path(tmp)
+            ex = Exchange(wal)
+            ex.limit(1, SIDE_BUY, 10, 1, 1)
+            rsp = ex.reject_to_host(1, 9, "auction")
+            self.assertFalse(rsp.ok)
+            self.assertEqual(rsp.oid, 9)
+            self.assertEqual(ex.venue.book(1).bbo_bid_qty, 1)
+            slice_recs = [r for r in Wal(wal).read_slice(1) if r["type"] == "host_reject"]
+            host_recs = Wal(wal).read_host()
+            self.assertEqual(slice_recs[0]["oid"], 9)
+            self.assertEqual(host_recs[0]["oid"], 9)
+            self.assertEqual(host_recs[0]["slice"], 1)
+
+
 class TestCli(unittest.TestCase):
     def test_handle_lines(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

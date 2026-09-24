@@ -123,6 +123,16 @@ class Exchange:
         self._log_result(rsp, p, self.venue.seq[p])
         return rsp
 
+    def reject_to_host(self, slice_id: int, oid: int, reason: str = "auction") -> BookRsp:
+        self.wal.append(
+            {"type": "host_reject", "oid": oid, "reason": reason},
+            slice_id,
+        )
+        self.wal.append_host(
+            {"type": "host_reject", "slice": slice_id, "oid": oid, "reason": reason}
+        )
+        return BookRsp(ok=False, oid=oid)
+
     def cancel(self, oid: int) -> BookRsp:
         symbol = self.venue.oids.get(oid)
         p = self.venue.pipe(symbol) if symbol is not None else 0

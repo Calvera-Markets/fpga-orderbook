@@ -28,6 +28,13 @@ module slice_engine
   input  wire [PRICE_W-1:0]  cmd_price [N_SLICES],
   input  wire [QTY_W-1:0]    cmd_qty [N_SLICES],
   input  wire [OID_W-1:0]    cmd_oid [N_SLICES],
+  input  wire [N_SLICES-1:0] cmd_flag,
+
+  output logic               host_valid,
+  input  wire                host_ready,
+  output logic [OID_W-1:0]   host_oid,
+  output logic [7:0]         host_reason,
+  output logic [7:0]         host_slice,
 
   output logic [N_SLICES-1:0] rsp_valid,
   output logic [N_SLICES-1:0] rsp_ok,
@@ -69,6 +76,9 @@ module slice_engine
 
   logic [SYMBOL_W-1:0] sym_q [N_SLICES];
   logic [1:0]          algo_q [N_SLICES];
+  logic                host_busy;
+  logic [OID_W-1:0]    host_oid_q;
+  logic [7:0]          host_slice_q;
   logic [N_SLICES-1:0] nak_busy;
   logic [OID_W-1:0]    nak_oid [N_SLICES];
   logic [N_SLICES-1:0] fifo_algo;
@@ -109,13 +119,15 @@ module slice_engine
           || (algo_q[i] == ALGO_MIDPOINT);
       slice_symbol[i]     = sym_q[i];
       slice_algo[i]       = algo_q[i];
-      slice_idle[i]       = book_idle[i] && !nak_busy[i];
-      cmd_ready[i]        = rst_n && (fifo_algo[i]
+      slice_idle[i]       = book_idle[i] && !nak_busy[i] && !host_busy;
+      cmd_ready[i]        = rst_n && (cmd_flag[i]
+          ? (!host_busy && host_ready)
+          : fifo_algo[i]
           ? (book_cmd_ready[i] && (miss_left[i] == 3'd0) &&
              (cmd_op[i] != BOOK_LIMIT ||
               (cmd_side[i] == SIDE_SELL ? ask_hit[i] : bid_hit[i]) || miss_grant[i]))
           : !nak_busy[i]);
-      book_cmd_valid[i]   = cmd_valid[i] && cmd_ready[i] && fifo_algo[i];
+      book_cmd_valid[i]   = cmd_valid[i] && cmd_ready[i] && fifo_algo[i] && !cmd_flag[i];
       rsp_valid[i]        = fifo_algo[i] ? book_rsp_valid[i] : nak_busy[i];
       rsp_ok[i]           = fifo_algo[i] ? book_rsp_ok[i] : 1'b0;
       rsp_oid[i]          = fifo_algo[i] ? book_rsp_oid[i] : nak_oid[i];
@@ -138,6 +150,11 @@ module slice_engine
     end
   end
 
+  assign host_valid  = host_busy;
+  assign host_oid    = host_oid_q;
+  assign host_reason = 8'd7;
+  assign host_slice  = host_slice_q;
+
   assign cfg_ready = rst_n && slice_idle[cfg_slice] && !cmd_valid[cfg_slice];
 
   always_ff @(posedge clk) begin
@@ -154,6 +171,9 @@ module slice_engine
         store_wr     <= 1'b0;
         store_px     <= '0;
       end
+      host_busy    <= 1'b0;
+      host_oid_q   <= '0;
+      host_slice_q <= '0;
     end else begin
       store_wr <= 1'b0;
       for (int i = 0; i < N_SLICES; i++) begin
@@ -176,7 +196,14 @@ module slice_engine
             (cmd_side[i] == SIDE_SELL ? ask_hit[i] : bid_hit[i])) begin
           miss_grant[i] <= 1'b0;
         end
-        if (cmd_valid[i] && cmd_ready[i] && !fifo_algo[i]) begin
+        if (cmd_valid[i] && cmd_ready[i] && cmd_flag[i]) begin
+          host_busy    <= 1'b1;
+          host_oid_q   <= cmd_oid[i];
+          host_slice_q <= 8'(i);
+        end else if (host_busy && host_ready) begin
+          host_busy <= 1'b0;
+        end
+        if (cmd_valid[i] && cmd_ready[i] && !fifo_algo[i] && !cmd_flag[i]) begin
           nak_busy[i] <= 1'b1;
           nak_oid[i]  <= cmd_oid[i];
         end else begin

@@ -87,6 +87,8 @@ void reset() {
   top->cfg_algo = ALGO_FIFO;
   top->lookup_oid = 0;
   top->cmd_valid = 0;
+  top->cmd_flag = 0;
+  top->host_ready = 1;
   top->cmd_op = 0;
   top->cmd_side = 0;
   top->evt_ready = (1u << N_SLICES) - 1u;
@@ -407,6 +409,29 @@ void test_cold_lookup_does_not_stall() {
   expect(!top->lookup_hit, "unknown id is not invented by the tail");
 }
 
+void test_flag_goes_to_the_host() {
+  reset();
+  top->cmd_flag = 1u;
+  present(0, BOOK_LIMIT, SIDE_BUY, 15, 1, 41);
+  set_valid(0, true);
+  top->eval();
+  expect(bit(top->cmd_ready, 0), "flagged slice is ready on the host path");
+  expect(bit(top->cmd_ready, 1), "other slice stays ready");
+  tick();
+  set_valid(0, false);
+  int guard = 0;
+  while (!top->host_valid && guard++ < 8) tick();
+  expect(top->host_valid, "reject is on the host port");
+  expect_eq_u64(top->host_oid, 41, "host records the oid");
+  expect_eq_u64(top->host_slice, 0, "host names the slice");
+  expect(!bit(top->bbo_bid_valid, 0), "flag does not rest");
+  expect(!bit(top->rsp_valid, 1), "reject is not another slice's response");
+  top->cmd_flag = 0;
+  Rsp other = issue(1, BOOK_LIMIT, SIDE_BUY, 20, 1, 42);
+  expect(other.ok, "other slice still rests");
+  expect_eq_u64(other.rest, 1, "other slice rest qty");
+}
+
 void test_reslice_when_idle() {
   reset();
   top->cfg_slice = 3;
@@ -433,6 +458,7 @@ int main(int argc, char **argv) {
   test_midpoint_trades_between_the_sides();
   test_lookup_names_the_slice();
   test_cold_lookup_does_not_stall();
+  test_flag_goes_to_the_host();
   test_reslice_when_idle();
   if (errors == 0) {
     std::cout << "slice_engine: " << checks << " checks passed\n";
