@@ -1,8 +1,9 @@
 `default_nettype none
 
-// Cold order ids. A linear list, not the hot hash.
-// The caller waits before it trusts a miss; this read itself is combinational.
-module oid_tail
+// Cold keys in a two-level tree. Node 0 is the root. Later keys hang off it.
+// `visits` is how many nodes a lookup touches. A miss of the root costs 2
+// once a second node exists.
+module oid_tree
   import exch_pkg::*;
 #(
   parameter int DEPTH = 16
@@ -18,7 +19,8 @@ module oid_tail
   output logic               hit,
   output logic [7:0]         rd_slice,
   output logic [PRICE_W-1:0] rd_price,
-  output logic [3:0]         rd_slot
+  output logic [3:0]         rd_slot,
+  output logic [2:0]         visits
 );
 
   logic [OID_W-1:0]   oid_m   [0:DEPTH-1];
@@ -28,6 +30,7 @@ module oid_tail
   logic               valid_m [0:DEPTH-1];
   logic [$clog2(DEPTH)-1:0] wr_ptr;
 
+  integer n;
   always_ff @(posedge clk) begin
     if (!rst_n) begin
       wr_ptr <= '0;
@@ -47,12 +50,24 @@ module oid_tail
     rd_slice = '0;
     rd_price = '0;
     rd_slot  = '0;
-    for (int i = 0; i < DEPTH; i++) begin
-      if (!hit && valid_m[i] && oid_m[i] == rd_oid) begin
+    visits   = 3'd0;
+    if (valid_m[0]) begin
+      visits = 3'd1;
+      if (oid_m[0] == rd_oid) begin
         hit      = 1'b1;
-        rd_slice = slice_m[i];
-        rd_price = price_m[i];
-        rd_slot  = slot_m[i];
+        rd_slice = slice_m[0];
+        rd_price = price_m[0];
+        rd_slot  = slot_m[0];
+      end else if (valid_m[1]) begin
+        visits = 3'd2;
+        for (n = 1; n < DEPTH; n = n + 1) begin
+          if (!hit && valid_m[n] && oid_m[n] == rd_oid) begin
+            hit      = 1'b1;
+            rd_slice = slice_m[n];
+            rd_price = price_m[n];
+            rd_slot  = slot_m[n];
+          end
+        end
       end
     end
   end

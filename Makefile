@@ -10,6 +10,7 @@ LVL_TOP := level_table
 TOUCH_TOP := touch_tile
 OID_TOP := oid_hash
 TICK_TOP := tick_array
+TREE_TOP := oid_tree
 FIFO_DIR := obj_dir/price_level_fifo
 BOOK_DIR := obj_dir/book
 BANK_DIR := obj_dir/bank
@@ -19,6 +20,7 @@ LVL_DIR := obj_dir/level_table
 TOUCH_DIR := obj_dir/touch_tile
 OID_DIR := obj_dir/oid_hash
 TICK_DIR := obj_dir/tick_array
+TREE_DIR := obj_dir/oid_tree
 FIFO_BIN := $(FIFO_DIR)/$(FIFO_TOP)_sim
 BOOK_BIN := $(BOOK_DIR)/$(BOOK_TOP)_sim
 BANK_BIN := $(BANK_DIR)/$(BANK_TOP)_sim
@@ -28,6 +30,7 @@ LVL_BIN := $(LVL_DIR)/$(LVL_TOP)_sim
 TOUCH_BIN := $(TOUCH_DIR)/$(TOUCH_TOP)_sim
 OID_BIN := $(OID_DIR)/$(OID_TOP)_sim
 TICK_BIN := $(TICK_DIR)/$(TICK_TOP)_sim
+TREE_BIN := $(TREE_DIR)/$(TREE_TOP)_sim
 BOOK_RTL := $(COMMON_RTL) rtl/book/tick_array.sv rtl/book/level_table.sv rtl/book/one_symbol_book.sv
 
 VFLAGS := --cc --exe --build -sv -Wall -CFLAGS "-std=c++17 -Wall"
@@ -77,9 +80,9 @@ $(PART_BIN): $(PART_RTL) tb/partitioned_engine_tb.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $(PART_TOP) -Mdir $(PART_DIR) -o $(PART_TOP)_sim \
 		$(PART_RTL) tb/partitioned_engine_tb.cpp
 
-$(SLICE_BIN): $(BOOK_RTL) rtl/book/touch_tile.sv rtl/book/tile_store.sv rtl/book/oid_hash.sv rtl/book/oid_tail.sv rtl/book/slice_engine.sv tb/slice_engine_tb.cpp
+$(SLICE_BIN): $(BOOK_RTL) rtl/book/touch_tile.sv rtl/book/tile_store.sv rtl/book/oid_hash.sv rtl/book/oid_tree.sv rtl/book/slice_engine.sv tb/slice_engine_tb.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $(SLICE_TOP) -Mdir $(SLICE_DIR) -o $(SLICE_TOP)_sim \
-		$(BOOK_RTL) rtl/book/touch_tile.sv rtl/book/tile_store.sv rtl/book/oid_hash.sv rtl/book/oid_tail.sv rtl/book/slice_engine.sv tb/slice_engine_tb.cpp
+		$(BOOK_RTL) rtl/book/touch_tile.sv rtl/book/tile_store.sv rtl/book/oid_hash.sv rtl/book/oid_tree.sv rtl/book/slice_engine.sv tb/slice_engine_tb.cpp
 
 sim-fifo: $(FIFO_BIN)
 	$(FIFO_BIN)
@@ -124,9 +127,16 @@ $(TICK_BIN): rtl/pkg/exch_pkg.sv rtl/book/tick_array.sv tb/tick_array_tb.cpp
 sim-tick: $(TICK_BIN)
 	$(TICK_BIN)
 
+$(TREE_BIN): rtl/pkg/exch_pkg.sv rtl/book/oid_tree.sv tb/oid_tree_tb.cpp
+	$(VERILATOR) $(VFLAGS) --top-module $(TREE_TOP) -Mdir $(TREE_DIR) -o $(TREE_TOP)_sim \
+		rtl/pkg/exch_pkg.sv rtl/book/oid_tree.sv tb/oid_tree_tb.cpp
+
+sim-tree: $(TREE_BIN)
+	$(TREE_BIN)
+
 sim: sim-fifo sim-book sim-bank sim-part sim-slice sim-level
 
-SLICE_RTL := $(BOOK_RTL) rtl/book/touch_tile.sv rtl/book/tile_store.sv rtl/book/oid_hash.sv rtl/book/oid_tail.sv rtl/book/slice_engine.sv
+SLICE_RTL := $(BOOK_RTL) rtl/book/touch_tile.sv rtl/book/tile_store.sv rtl/book/oid_hash.sv rtl/book/oid_tree.sv rtl/book/slice_engine.sv
 
 $(LIB_DIR)/Vslice_engine.mk: $(SLICE_RTL)
 	$(VERILATOR) --cc --build -sv -Wall --top-module $(SLICE_TOP) -Mdir $(LIB_DIR) \

@@ -300,7 +300,9 @@ module slice_engine
     .rd_slot   (hash_slot)
   );
 
-  oid_tail u_tail (
+  logic [2:0] tree_visits;
+
+  oid_tree u_tail (
     .clk, .rst_n,
     .wr_en     (place_wr),
     .wr_oid    (place_oid),
@@ -311,7 +313,8 @@ module slice_engine
     .hit       (tail_hit),
     .rd_slice  (tail_slice),
     .rd_price  (tail_price),
-    .rd_slot   (tail_slot)
+    .rd_slot   (tail_slot),
+    .visits    (tree_visits)
   );
 
   // A hash hit is immediate. A hash miss waits out tail_left, and that
@@ -329,7 +332,7 @@ module slice_engine
       tail_seen <= '0;
     end else if (lookup_oid != tail_seen && !hash_hit) begin
       tail_seen <= lookup_oid;
-      tail_left <= 3'd4;
+      tail_left <= (tree_visits < 3'd2) ? 3'd2 : tree_visits;
     end else if (tail_left != 3'd0) begin
       tail_left <= tail_left - 3'd1;
       tail_seen <= lookup_oid;
