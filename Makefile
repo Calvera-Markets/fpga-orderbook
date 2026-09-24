@@ -11,6 +11,7 @@ TOUCH_TOP := touch_tile
 OID_TOP := oid_hash
 TICK_TOP := tick_array
 TREE_TOP := oid_tree
+WALK_TOP := walker_fifo
 FIFO_DIR := obj_dir/price_level_fifo
 BOOK_DIR := obj_dir/book
 BANK_DIR := obj_dir/bank
@@ -21,6 +22,7 @@ TOUCH_DIR := obj_dir/touch_tile
 OID_DIR := obj_dir/oid_hash
 TICK_DIR := obj_dir/tick_array
 TREE_DIR := obj_dir/oid_tree
+WALK_DIR := obj_dir/walker_fifo
 FIFO_BIN := $(FIFO_DIR)/$(FIFO_TOP)_sim
 BOOK_BIN := $(BOOK_DIR)/$(BOOK_TOP)_sim
 BANK_BIN := $(BANK_DIR)/$(BANK_TOP)_sim
@@ -31,7 +33,8 @@ TOUCH_BIN := $(TOUCH_DIR)/$(TOUCH_TOP)_sim
 OID_BIN := $(OID_DIR)/$(OID_TOP)_sim
 TICK_BIN := $(TICK_DIR)/$(TICK_TOP)_sim
 TREE_BIN := $(TREE_DIR)/$(TREE_TOP)_sim
-BOOK_RTL := $(COMMON_RTL) rtl/book/tick_array.sv rtl/book/level_table.sv rtl/book/one_symbol_book.sv
+WALK_BIN := $(WALK_DIR)/$(WALK_TOP)_sim
+BOOK_RTL := $(COMMON_RTL) rtl/book/tick_array.sv rtl/book/level_table.sv rtl/book/walker_fifo.sv rtl/book/one_symbol_book.sv
 
 VFLAGS := --cc --exe --build -sv -Wall -CFLAGS "-std=c++17 -Wall"
 VERILATOR_ROOT ?= $(shell $(VERILATOR) --getenv VERILATOR_ROOT)
@@ -42,7 +45,7 @@ ifeq ($(shell uname),Darwin)
 LIBLDFLAGS := -Wl,-U,__Z15vl_time_stamp64v,-U,__Z13sc_time_stampv,-U,_vlog_startup_routines
 endif
 
-.PHONY: all help golden sim sim-fifo sim-book sim-bank sim-part sim-slice sim-level sim-touch sim-oid sim-tick lib rtl-gw test clean run
+.PHONY: all help golden sim sim-fifo sim-book sim-bank sim-part sim-slice sim-level sim-touch sim-oid sim-tick sim-tree sim-walk lib rtl-gw test clean run
 
 all: test
 
@@ -58,6 +61,9 @@ help:
 	@echo "make sim       all RTL benches"
 	@echo "make test      golden + all RTL sims + rtl gateway"
 	@echo "make run         interactive mini-exchange (Verilator engine, WAL data/pipe*.wal)"
+	@echo "make paper       render paper/whitepaper.pdf (tectonic / latexmk / pdflatex)"
+	@echo "make paper-view  render and open the whitepaper"
+	@echo "make paper-watch rebuild the whitepaper on save and refresh the PDF"
 	@echo "make clean       remove obj_dir"
 
 golden:
@@ -134,7 +140,14 @@ $(TREE_BIN): rtl/pkg/exch_pkg.sv rtl/book/oid_tree.sv tb/oid_tree_tb.cpp
 sim-tree: $(TREE_BIN)
 	$(TREE_BIN)
 
-sim: sim-fifo sim-book sim-bank sim-part sim-slice sim-level
+$(WALK_BIN): rtl/book/walker_fifo.sv tb/walker_fifo_tb.cpp
+	$(VERILATOR) $(VFLAGS) --top-module $(WALK_TOP) -Mdir $(WALK_DIR) -o $(WALK_TOP)_sim \
+		rtl/book/walker_fifo.sv tb/walker_fifo_tb.cpp
+
+sim-walk: $(WALK_BIN)
+	$(WALK_BIN)
+
+sim: sim-fifo sim-book sim-bank sim-part sim-slice sim-level sim-walk
 
 SLICE_RTL := $(BOOK_RTL) rtl/book/touch_tile.sv rtl/book/tile_store.sv rtl/book/oid_hash.sv rtl/book/oid_tree.sv rtl/book/slice_engine.sv
 
@@ -157,7 +170,6 @@ test: golden sim rtl-gw
 
 run: $(LIBPE)
 	python3 sw/gateway/main.py --wal data --engine rtl
-
 
 clean:
 	rm -rf obj_dir

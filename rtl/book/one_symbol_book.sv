@@ -100,11 +100,11 @@ module one_symbol_book
   logic [N_LEVELS-1:0] bid_cmd_ready, ask_cmd_ready;
   logic [CNT_W-1:0]    bid_depth [N_LEVELS];
   logic [CNT_W-1:0]    ask_depth [N_LEVELS];
+  /* verilator lint_on UNUSEDSIGNAL */
   logic [OID_W-1:0]    bid_head_oid [N_LEVELS];
   logic [OID_W-1:0]    ask_head_oid [N_LEVELS];
   logic [QTY_W-1:0]    bid_head_qty [N_LEVELS];
   logic [QTY_W-1:0]    ask_head_qty [N_LEVELS];
-  /* verilator lint_on UNUSEDSIGNAL */
 
   genvar gi;
   generate
@@ -347,6 +347,31 @@ module one_symbol_book
   wire rest_full_bid = rest_found_bid && !rest_alloc_bid && bid_full[rest_idx_bid];
   wire rest_full_ask = rest_found_ask && !rest_alloc_ask && ask_full[rest_idx_ask];
 
+  wire [QTY_W-1:0] walk_qty0 = (latched_side == SIDE_BUY)
+      ? ask_head_qty[best_ask_idx] : bid_head_qty[best_bid_idx];
+  wire [31:0] walk_oid0 = (latched_side == SIDE_BUY)
+      ? ask_head_oid[best_ask_idx][31:0] : bid_head_oid[best_bid_idx][31:0];
+  /* verilator lint_off UNUSEDSIGNAL */
+  wire        walk_done;
+  wire [31:0] walk_fill0, walk_fill1, walk_maker0, walk_maker1;
+  /* verilator lint_on UNUSEDSIGNAL */
+  wire [31:0] walk_take;
+  walker_fifo u_walk (
+    .clk, .rst_n,
+    .start   (mt_st == MT_ISSUE),
+    .take_qty(remaining),
+    .oid0    (walk_oid0),
+    .qty0    (walk_qty0),
+    .oid1    (32'd0),
+    .qty1    (32'd0),
+    .done    (walk_done),
+    .fill0   (walk_fill0),
+    .fill1   (walk_fill1),
+    .maker0  (walk_maker0),
+    .maker1  (walk_maker1),
+    .take0   (walk_take)
+  );
+
   wire sel_rsp_valid = match_is_ask ? ask_rsp_valid[match_idx] : bid_rsp_valid[match_idx];
   wire sel_rsp_ok    = match_is_ask ? ask_rsp_ok[match_idx]    : bid_rsp_ok[match_idx];
   wire [OID_W-1:0] sel_rsp_oid = match_is_ask ? ask_rsp_oid[match_idx] : bid_rsp_oid[match_idx];
@@ -375,6 +400,8 @@ module one_symbol_book
     bid_fifo_qty = (!taker_idle) ? remaining   : bid_qty_l;
     ask_fifo_qty = (!taker_idle) ? remaining   : ask_qty_l;
     if (mt_st == MT_ISSUE) begin
+      bid_fifo_qty = walk_take;
+      ask_fifo_qty = walk_take;
       if (latched_side == SIDE_BUY) begin
         ask_cmd_valid[best_ask_idx] = 1'b1;
         ask_cmd_op[best_ask_idx]    = OP_MATCH;

@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from price_level import PriceLevel
+from walkers import fifo_take
 
 N_LEVELS = 8
 PRICE_WIN = 128
@@ -84,20 +85,26 @@ class Book:
         if side == SIDE_BUY:
             while remaining and self.asks and price >= min(self.asks):
                 px = min(self.asks)
-                r = self.asks[px].match(remaining)
-                fills.append(Fill(r.oid, oid, px, r.qty))
-                remaining -= r.qty
-                filled += r.qty
-                if self.asks[px].empty:
+                level = self.asks[px]
+                orders = [[o.oid, o.qty] for o in level.slots]
+                got, took = fifo_take(orders, remaining, oid, px)
+                fills.extend(got)
+                remaining -= took
+                filled += took
+                level.slots = [type(level.slots[0])(oid=o[0], qty=o[1]) for o in orders] if orders else []
+                if level.empty:
                     del self.asks[px]
         else:
             while remaining and self.bids and price <= max(self.bids):
                 px = max(self.bids)
-                r = self.bids[px].match(remaining)
-                fills.append(Fill(r.oid, oid, px, r.qty))
-                remaining -= r.qty
-                filled += r.qty
-                if self.bids[px].empty:
+                level = self.bids[px]
+                orders = [[o.oid, o.qty] for o in level.slots]
+                got, took = fifo_take(orders, remaining, oid, px)
+                fills.extend(got)
+                remaining -= took
+                filled += took
+                level.slots = [type(level.slots[0])(oid=o[0], qty=o[1]) for o in orders] if orders else []
+                if level.empty:
                     del self.bids[px]
         rest = 0
         unrested = 0
