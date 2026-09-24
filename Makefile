@@ -71,9 +71,9 @@ $(PART_BIN): $(PART_RTL) tb/partitioned_engine_tb.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $(PART_TOP) -Mdir $(PART_DIR) -o $(PART_TOP)_sim \
 		$(PART_RTL) tb/partitioned_engine_tb.cpp
 
-$(SLICE_BIN): $(BOOK_RTL) rtl/book/slice_engine.sv tb/slice_engine_tb.cpp
+$(SLICE_BIN): $(BOOK_RTL) rtl/book/touch_tile.sv rtl/book/slice_engine.sv tb/slice_engine_tb.cpp
 	$(VERILATOR) $(VFLAGS) --top-module $(SLICE_TOP) -Mdir $(SLICE_DIR) -o $(SLICE_TOP)_sim \
-		$(BOOK_RTL) rtl/book/slice_engine.sv tb/slice_engine_tb.cpp
+		$(BOOK_RTL) rtl/book/touch_tile.sv rtl/book/slice_engine.sv tb/slice_engine_tb.cpp
 
 sim-fifo: $(FIFO_BIN)
 	$(FIFO_BIN)
@@ -106,7 +106,7 @@ sim-touch: $(TOUCH_BIN)
 
 sim: sim-fifo sim-book sim-bank sim-part sim-slice sim-level
 
-SLICE_RTL := $(BOOK_RTL) rtl/book/slice_engine.sv
+SLICE_RTL := $(BOOK_RTL) rtl/book/touch_tile.sv rtl/book/slice_engine.sv
 
 $(LIB_DIR)/Vslice_engine.mk: $(SLICE_RTL)
 	$(VERILATOR) --cc --build -sv -Wall --top-module $(SLICE_TOP) -Mdir $(LIB_DIR) \

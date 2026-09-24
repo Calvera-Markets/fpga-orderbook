@@ -54,7 +54,10 @@ module slice_engine
   output logic [QTY_W-1:0]    bbo_bid_qty [N_SLICES],
   output logic [N_SLICES-1:0] bbo_ask_valid,
   output logic [PRICE_W-1:0]  bbo_ask_px [N_SLICES],
-  output logic [QTY_W-1:0]    bbo_ask_qty [N_SLICES]
+  output logic [QTY_W-1:0]    bbo_ask_qty [N_SLICES],
+
+  output logic [N_SLICES-1:0] touch_bid_valid,
+  output logic [N_SLICES-1:0] touch_ask_valid
 );
 
   logic [SYMBOL_W-1:0] sym_q [N_SLICES];
@@ -62,6 +65,10 @@ module slice_engine
   logic [N_SLICES-1:0] nak_busy;
   logic [OID_W-1:0]    nak_oid [N_SLICES];
   logic [N_SLICES-1:0] fifo_algo;
+  logic [2:0]          miss_left [N_SLICES];
+  logic [N_SLICES-1:0] miss_grant;
+  logic [N_SLICES-1:0] bid_hit, ask_hit;
+  logic [N_SLICES-1:0] bid_touch_v, ask_touch_v;
 
   logic [N_SLICES-1:0] book_cmd_valid;
   logic [N_SLICES-1:0] book_cmd_ready;
@@ -88,7 +95,11 @@ module slice_engine
       slice_symbol[i]     = sym_q[i];
       slice_algo[i]       = algo_q[i];
       slice_idle[i]       = book_idle[i] && !nak_busy[i];
-      cmd_ready[i]        = rst_n && (fifo_algo[i] ? book_cmd_ready[i] : !nak_busy[i]);
+      cmd_ready[i]        = rst_n && (fifo_algo[i]
+          ? (book_cmd_ready[i] && (miss_left[i] == 3'd0) &&
+             (cmd_op[i] != BOOK_LIMIT ||
+              (cmd_side[i] == SIDE_SELL ? ask_hit[i] : bid_hit[i]) || miss_grant[i]))
+          : !nak_busy[i]);
       book_cmd_valid[i]   = cmd_valid[i] && cmd_ready[i] && fifo_algo[i];
       rsp_valid[i]        = fifo_algo[i] ? book_rsp_valid[i] : nak_busy[i];
       rsp_ok[i]           = fifo_algo[i] ? book_rsp_ok[i] : 1'b0;
@@ -107,6 +118,8 @@ module slice_engine
       bbo_ask_valid[i]    = book_ask_v[i];
       bbo_ask_px[i]       = book_ask_px[i];
       bbo_ask_qty[i]      = book_ask_qty[i];
+      touch_bid_valid[i]  = bid_touch_v[i];
+      touch_ask_valid[i]  = ask_touch_v[i];
     end
   end
 
@@ -115,13 +128,28 @@ module slice_engine
   always_ff @(posedge clk) begin
     if (!rst_n) begin
       for (int i = 0; i < N_SLICES; i++) begin
-        sym_q[i]    <= SYMBOL_W'(i);
-        algo_q[i]   <= ALGO_FIFO;
-        nak_busy[i] <= 1'b0;
-        nak_oid[i]  <= '0;
+        sym_q[i]     <= SYMBOL_W'(i);
+        algo_q[i]    <= ALGO_FIFO;
+        nak_busy[i]  <= 1'b0;
+        nak_oid[i]   <= '0;
+        miss_left[i] <= 3'd0;
+        miss_grant[i]<= 1'b0;
       end
     end else begin
       for (int i = 0; i < N_SLICES; i++) begin
+        if (miss_left[i] != 3'd0) begin
+          miss_left[i] <= miss_left[i] - 3'd1;
+          if (miss_left[i] == 3'd1) miss_grant[i] <= 1'b1;
+        end else if (fifo_algo[i] && book_cmd_ready[i] && !miss_grant[i] &&
+                     cmd_op[i] == BOOK_LIMIT &&
+                     !(cmd_side[i] == SIDE_SELL ? ask_hit[i] : bid_hit[i])) begin
+          miss_left[i] <= 3'd4;
+        end
+        if (book_cmd_valid[i]) miss_grant[i] <= 1'b0;
+        if (cmd_op[i] == BOOK_LIMIT &&
+            (cmd_side[i] == SIDE_SELL ? ask_hit[i] : bid_hit[i])) begin
+          miss_grant[i] <= 1'b0;
+        end
         if (cmd_valid[i] && cmd_ready[i] && !fifo_algo[i]) begin
           nak_busy[i] <= 1'b1;
           nak_oid[i]  <= cmd_oid[i];
@@ -167,6 +195,22 @@ module slice_engine
         .bbo_ask_valid (book_ask_v[gi]),
         .bbo_ask_px    (book_ask_px[gi]),
         .bbo_ask_qty   (book_ask_qty[gi])
+      );
+      touch_tile u_bid_touch (
+        .clk, .rst_n,
+        .set_valid (book_cmd_valid[gi] && (cmd_op[gi] == BOOK_LIMIT) && (cmd_side[gi] == SIDE_BUY)),
+        .set_price (cmd_price[gi]),
+        .probe     (cmd_price[gi]),
+        .valid     (bid_touch_v[gi]),
+        .hit       (bid_hit[gi])
+      );
+      touch_tile u_ask_touch (
+        .clk, .rst_n,
+        .set_valid (book_cmd_valid[gi] && (cmd_op[gi] == BOOK_LIMIT) && (cmd_side[gi] == SIDE_SELL)),
+        .set_price (cmd_price[gi]),
+        .probe     (cmd_price[gi]),
+        .valid     (ask_touch_v[gi]),
+        .hit       (ask_hit[gi])
       );
     end
   endgenerate

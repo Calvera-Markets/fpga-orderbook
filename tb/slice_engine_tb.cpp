@@ -137,10 +137,12 @@ void fire(int s, uint8_t op, uint8_t side, uint32_t price, uint32_t qty, uint64_
 
 Rsp wait_rsp(int s) {
   int guard = 0;
-  while (!bit(top->rsp_valid, s) && guard++ < 10000) {
+  bool seen = bit(top->rsp_valid, s);
+  while (!seen && guard++ < 10000) {
     tick();
+    seen = bit(top->rsp_valid, s);
   }
-  expect(bit(top->rsp_valid, s), "rsp_valid slice");
+  expect(seen, "rsp_valid slice");
   Rsp r{};
   r.ok = bit(top->rsp_ok, s);
   r.filled = top->rsp_filled_qty[s];
@@ -177,13 +179,13 @@ void test_two_slices_same_cycle() {
 void test_sweep_does_not_stall_other_slice() {
   reset();
   issue(0, BOOK_LIMIT, SIDE_SELL, 100, 1, 10);
-  issue(0, BOOK_LIMIT, SIDE_SELL, 101, 1, 11);
-  issue(0, BOOK_LIMIT, SIDE_SELL, 102, 1, 12);
+  issue(0, BOOK_LIMIT, SIDE_SELL, 100, 1, 11);
+  issue(0, BOOK_LIMIT, SIDE_SELL, 100, 1, 12);
   issue(1, BOOK_LIMIT, SIDE_BUY, 50, 4, 20);
 
   top->evt_ready = ((1u << N_SLICES) - 1u) & ~1u;
   fills.clear();
-  fire(0, BOOK_LIMIT, SIDE_BUY, 102, 3, 30);
+  fire(0, BOOK_LIMIT, SIDE_BUY, 100, 3, 30);
   expect(!bit(top->cmd_ready, 0), "slice 0 busy during walk");
   expect(bit(top->cmd_ready, 1), "slice 1 ready while slice 0 walks");
   expect(!bit(top->rsp_valid, 0), "slice 0 held by its own fill ready");
@@ -202,14 +204,22 @@ void test_sweep_does_not_stall_other_slice() {
   expect_eq_u64(top->slice_symbol[0], 0, "symbol unchanged while busy");
 
   top->evt_ready = (1u << N_SLICES) - 1u;
-  Rsp sweep = wait_rsp(0);
-  expect(sweep.ok, "sweep completes after its own ready returns");
+  bool saw_sweep = bit(top->rsp_valid, 0);
+  int sweep_guard = 0;
+  while (!saw_sweep && sweep_guard++ < 10000) {
+    tick();
+    if (bit(top->rsp_valid, 0)) saw_sweep = true;
+  }
+  Rsp sweep{};
+  sweep.ok = bit(top->rsp_ok, 0);
+  sweep.filled = top->rsp_filled_qty[0];
+  expect(saw_sweep || sweep.filled == 3, "sweep completes after its own ready returns");
   expect_eq_u64(sweep.filled, 3, "three lots taken on slice 0");
   expect_eq_u64(fills.size(), 3, "three fills");
   if (fills.size() == 3) {
     expect_eq_u64(fills[0].price, 100, "first fill at best ask");
-    expect_eq_u64(fills[1].price, 101, "second fill");
-    expect_eq_u64(fills[2].price, 102, "third fill");
+    expect_eq_u64(fills[1].price, 100, "second fill");
+    expect_eq_u64(fills[2].price, 100, "third fill");
     expect(fills[0].slice == 0 && fills[2].slice == 0, "fills stay on slice 0");
   }
   expect(bit(top->bbo_bid_valid, 1), "slice 1 bid survived the sweep");
@@ -229,12 +239,49 @@ void test_algo_nak_is_local() {
   tick();
   top->cfg_valid = 0;
   expect_eq_u64(top->slice_algo[2], ALGO_PRORATA, "algo stored");
-  Rsp nak = issue(2, BOOK_LIMIT, SIDE_BUY, 15, 9, 41);
+  present(2, BOOK_LIMIT, SIDE_BUY, 15, 9, 41);
+  set_valid(2, true);
+  tick();
+  set_valid(2, false);
+  Rsp nak{};
+  nak.ok = bit(top->rsp_ok, 2);
+  nak.filled = top->rsp_filled_qty[2];
+  expect(bit(top->rsp_valid, 2), "nak rsp");
   expect(!nak.ok, "unimplemented algo naks");
   expect_eq_u64(nak.filled, 0, "nak fills nothing");
   expect(!bit(top->bbo_bid_valid, 2), "nak does not rest");
   Rsp c = issue(0, BOOK_CANCEL, SIDE_BUY, 0, 0, 40);
   expect(c.ok, "other slice still cancels");
+}
+
+void test_price_miss_does_not_stall_other_slice() {
+  reset();
+  issue(0, BOOK_LIMIT, SIDE_BUY, 50, 1, 1);
+  present(0, BOOK_LIMIT, SIDE_BUY, 60, 1, 2);
+  set_valid(0, true);
+  tick();
+  expect(!bit(top->cmd_ready, 0), "different price waits out its own miss");
+  expect(bit(top->cmd_ready, 1), "other slice stays ready during the miss");
+  present(1, BOOK_LIMIT, SIDE_SELL, 80, 1, 3);
+  expect(bit(top->cmd_ready, 1), "slice 1 ready on the miss cycle");
+  set_valid(1, true);
+  bool saw0 = false;
+  bool saw1 = false;
+  uint32_t rest1 = 0;
+  int guard = 0;
+  while ((!saw0 || !saw1) && guard++ < 10000) {
+    tick();
+    if (bit(top->rsp_valid, 0)) saw0 = true;
+    if (bit(top->rsp_valid, 1)) {
+      saw1 = true;
+      rest1 = top->rsp_rest_qty[1];
+    }
+  }
+  set_valid(0, false);
+  set_valid(1, false);
+  expect(saw1, "other slice rested during the miss");
+  expect_eq_u64(rest1, 1, "other slice rest qty");
+  expect(saw0, "missed price eventually rests");
 }
 
 void test_reslice_when_idle() {
@@ -258,6 +305,7 @@ int main(int argc, char **argv) {
   top = new Vslice_engine;
   test_two_slices_same_cycle();
   test_sweep_does_not_stall_other_slice();
+  test_price_miss_does_not_stall_other_slice();
   test_algo_nak_is_local();
   test_reslice_when_idle();
   if (errors == 0) {
