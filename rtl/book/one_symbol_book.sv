@@ -16,6 +16,7 @@ module one_symbol_book
   input  wire [PRICE_W-1:0]  cmd_price,
   input  wire [QTY_W-1:0]    cmd_qty,
   input  wire [OID_W-1:0]    cmd_oid,
+  input  wire [1:0]          algo,
 
   output logic               rsp_valid,
   output logic               rsp_ok,
@@ -53,11 +54,12 @@ module one_symbol_book
     LU_DECIDE = 2'd1
   } lu_e;
 
-  typedef enum logic [1:0] {
-    MT_IDLE  = 2'd0,
-    MT_ISSUE = 2'd1,
-    MT_WAIT  = 2'd2,
-    MT_HOLD  = 2'd3
+  typedef enum logic [2:0] {
+    MT_IDLE  = 3'd0,
+    MT_ISSUE = 3'd1,
+    MT_WAIT  = 3'd2,
+    MT_HOLD  = 3'd3,
+    MT_DRAIN = 3'd4
   } mt_e;
 
   typedef enum logic [2:0] {
@@ -98,13 +100,19 @@ module one_symbol_book
 
   /* verilator lint_off UNUSEDSIGNAL */
   logic [N_LEVELS-1:0] bid_cmd_ready, ask_cmd_ready;
+  /* verilator lint_on UNUSEDSIGNAL */
   logic [CNT_W-1:0]    bid_depth [N_LEVELS];
   logic [CNT_W-1:0]    ask_depth [N_LEVELS];
-  /* verilator lint_on UNUSEDSIGNAL */
   logic [OID_W-1:0]    bid_head_oid [N_LEVELS];
   logic [OID_W-1:0]    ask_head_oid [N_LEVELS];
   logic [QTY_W-1:0]    bid_head_qty [N_LEVELS];
   logic [QTY_W-1:0]    ask_head_qty [N_LEVELS];
+  logic [QTY_W-1:0]    bid_slot_qty [N_LEVELS][MAX_ORDERS];
+  logic [QTY_W-1:0]    ask_slot_qty [N_LEVELS][MAX_ORDERS];
+  logic [OID_W-1:0]    bid_slot_oid [N_LEVELS][MAX_ORDERS];
+  logic [OID_W-1:0]    ask_slot_oid [N_LEVELS][MAX_ORDERS];
+  logic                alloc_en;
+  logic [QTY_W-1:0]    alloc_qty [MAX_ORDERS];
 
   genvar gi;
   generate
@@ -125,7 +133,11 @@ module one_symbol_book
         .depth     (bid_depth[gi]),
         .head_oid  (bid_head_oid[gi]),
         .head_qty  (bid_head_qty[gi]),
-        .total_qty (bid_total[gi])
+        .total_qty (bid_total[gi]),
+        .alloc_en  (alloc_en),
+        .alloc_qty (alloc_qty),
+        .slot_qty  (bid_slot_qty[gi]),
+        .slot_oid  (bid_slot_oid[gi])
       );
     end
     for (gi = 0; gi < N_LEVELS; gi++) begin : gen_ask
@@ -145,7 +157,11 @@ module one_symbol_book
         .depth     (ask_depth[gi]),
         .head_oid  (ask_head_oid[gi]),
         .head_qty  (ask_head_qty[gi]),
-        .total_qty (ask_total[gi])
+        .total_qty (ask_total[gi]),
+        .alloc_en  (alloc_en),
+        .alloc_qty (alloc_qty),
+        .slot_qty  (ask_slot_qty[gi]),
+        .slot_oid  (ask_slot_oid[gi])
       );
     end
   endgenerate
@@ -196,6 +212,10 @@ module one_symbol_book
   logic [OID_W-1:0]   latched_oid;
   logic [QTY_W-1:0]   remaining;
   logic [QTY_W-1:0]   filled_acc, rest_acc, unrested_acc;
+  logic               use_pr;
+  logic [CNT_W-1:0]   drain_n, drain_i;
+  logic [OID_W-1:0]   drain_oid [MAX_ORDERS];
+  logic [QTY_W-1:0]   drain_qty [MAX_ORDERS];
 
   logic               match_is_ask;
   logic [LVL_IDX_W-1:0] match_idx;
@@ -372,6 +392,29 @@ module one_symbol_book
     .take0   (walk_take)
   );
 
+  logic [QTY_W-1:0] pr_qty [MAX_ORDERS];
+  logic [QTY_W-1:0] pr_fill [MAX_ORDERS];
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic [QTY_W-1:0] pr_taken;
+  /* verilator lint_on UNUSEDSIGNAL */
+  wire [CNT_W-1:0] pr_depth = (latched_side == SIDE_BUY)
+      ? ask_depth[best_ask_idx] : bid_depth[best_bid_idx];
+
+  always_comb begin
+    for (int i = 0; i < MAX_ORDERS; i++) begin
+      pr_qty[i] = (latched_side == SIDE_BUY)
+          ? ask_slot_qty[best_ask_idx][i] : bid_slot_qty[best_bid_idx][i];
+    end
+  end
+
+  walker_prorata u_pr (
+    .take_qty(remaining),
+    .depth   (pr_depth),
+    .qty     (pr_qty),
+    .fill    (pr_fill),
+    .taken   (pr_taken)
+  );
+
   wire sel_rsp_valid = match_is_ask ? ask_rsp_valid[match_idx] : bid_rsp_valid[match_idx];
   wire sel_rsp_ok    = match_is_ask ? ask_rsp_ok[match_idx]    : bid_rsp_ok[match_idx];
   wire [OID_W-1:0] sel_rsp_oid = match_is_ask ? ask_rsp_oid[match_idx] : bid_rsp_oid[match_idx];
@@ -395,6 +438,8 @@ module one_symbol_book
       bid_cmd_op[i]    = OP_NOP;
       ask_cmd_op[i]    = OP_NOP;
     end
+    alloc_en = 1'b0;
+    for (int i = 0; i < MAX_ORDERS; i++) alloc_qty[i] = '0;
     bid_fifo_oid = (!taker_idle) ? latched_oid : bid_oid_l;
     ask_fifo_oid = (!taker_idle) ? latched_oid : ask_oid_l;
     bid_fifo_qty = (!taker_idle) ? remaining   : bid_qty_l;
@@ -402,6 +447,10 @@ module one_symbol_book
     if (mt_st == MT_ISSUE) begin
       bid_fifo_qty = walk_take;
       ask_fifo_qty = walk_take;
+      if (use_pr) begin
+        alloc_en = 1'b1;
+        for (int i = 0; i < MAX_ORDERS; i++) alloc_qty[i] = pr_fill[i];
+      end
       if (latched_side == SIDE_BUY) begin
         ask_cmd_valid[best_ask_idx] = 1'b1;
         ask_cmd_op[best_ask_idx]    = OP_MATCH;
@@ -456,6 +505,13 @@ module one_symbol_book
       latched_side   <= SIDE_BUY;
       latched_px     <= '0;
       latched_oid    <= '0;
+      use_pr         <= 1'b0;
+      drain_n        <= '0;
+      drain_i        <= '0;
+      for (int i = 0; i < MAX_ORDERS; i++) begin
+        drain_oid[i] <= '0;
+        drain_qty[i] <= '0;
+      end
       remaining      <= '0;
       filled_acc     <= '0;
       rest_acc       <= '0;
@@ -534,6 +590,7 @@ module one_symbol_book
           rest_acc     <= '0;
           unrested_acc <= '0;
           rsp_ok       <= 1'b1;
+          use_pr       <= (algo == ALGO_PRORATA);
           mt_st        <= MT_ISSUE;
         end else if (cmd_op == BOOK_LIMIT && cmd_side == SIDE_BUY) begin
           bid_px_l     <= cmd_price;
@@ -595,6 +652,15 @@ module one_symbol_book
             match_idx <= best_bid_idx;
             match_px  <= bbo_bid_px_c;
           end
+          if (use_pr) begin
+            drain_n <= pr_depth;
+            drain_i <= '0;
+            for (int i = 0; i < MAX_ORDERS; i++) begin
+              drain_qty[i] <= pr_fill[i];
+              drain_oid[i] <= (latched_side == SIDE_BUY)
+                  ? ask_slot_oid[best_ask_idx][i] : bid_slot_oid[best_bid_idx][i];
+            end
+          end
           mt_st <= MT_WAIT;
         end
         MT_WAIT: begin
@@ -608,7 +674,8 @@ module one_symbol_book
                 if (match_is_ask) ask_used[match_idx] <= 1'b0;
                 else              bid_used[match_idx] <= 1'b0;
               end
-              mt_st <= MT_HOLD;
+              if (use_pr) mt_st <= MT_DRAIN;
+              else        mt_st <= MT_HOLD;
             end else begin
               rsp_ok    <= 1'b0;
               remaining <= '0;
@@ -627,6 +694,24 @@ module one_symbol_book
             wb_st         <= WB_FILL;
             mt_st         <= MT_IDLE;
             lu_st         <= LU_DECIDE;
+          end
+        end
+        MT_DRAIN: begin
+          if (wb_st == WB_IDLE) begin
+            if (drain_i >= drain_n) begin
+              mt_st <= MT_IDLE;
+              lu_st <= LU_DECIDE;
+            end else if (drain_qty[drain_i[IDX_W-1:0]] == '0) begin
+              drain_i <= drain_i + 1'b1;
+            end else begin
+              evt_valid     <= 1'b1;
+              evt_maker_oid <= drain_oid[drain_i[IDX_W-1:0]];
+              evt_taker_oid <= latched_oid;
+              evt_price     <= match_px;
+              evt_qty       <= drain_qty[drain_i[IDX_W-1:0]];
+              wb_st         <= WB_FILL;
+              drain_i       <= drain_i + 1'b1;
+            end
           end
         end
         default: mt_st <= MT_IDLE;

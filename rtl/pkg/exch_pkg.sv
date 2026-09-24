@@ -30,9 +30,8 @@ package exch_pkg;
   localparam logic SIDE_BUY    = 1'b0;
   localparam logic SIDE_SELL   = 1'b1;
 
-  // Per-slice match rule. Only FIFO is implemented in the resident book.
-  // Pro-rata and midpoint are named so a slice can refuse them without
-  // running them on another slice's pipe. The host owns those rules.
+  // Per-slice match rule. FIFO and pro-rata run in the resident book.
+  // Midpoint is named so a slice can refuse it without touching the book.
   localparam logic [1:0] ALGO_FIFO     = 2'd0;
   localparam logic [1:0] ALGO_PRORATA  = 2'd1;
   localparam logic [1:0] ALGO_MIDPOINT = 2'd2;

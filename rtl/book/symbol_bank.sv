@@ -96,6 +96,7 @@ module symbol_bank
         .cmd_valid (book_cmd_valid[gi]),
         .cmd_ready (book_ready[gi]),
         .cmd_op, .cmd_side, .cmd_price, .cmd_qty, .cmd_oid,
+        .algo      (ALGO_FIFO),
         .idle      (book_idle[gi]),
         .rsp_valid (book_rsp_valid[gi]),
         .rsp_ok    (book_rsp_ok[gi]),

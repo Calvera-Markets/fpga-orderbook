@@ -14,6 +14,7 @@ constexpr uint8_t SIDE_BUY = 0;
 constexpr uint8_t SIDE_SELL = 1;
 constexpr uint8_t ALGO_FIFO = 0;
 constexpr uint8_t ALGO_PRORATA = 1;
+constexpr uint8_t ALGO_MIDPOINT = 2;
 constexpr int N_SLICES = 4;
 
 int errors = 0;
@@ -229,28 +230,81 @@ void test_sweep_does_not_stall_other_slice() {
   expect_eq_u64(top->bbo_ask_px[1], 80, "slice 1 ask price");
 }
 
-void test_algo_nak_is_local() {
-  reset();
-  issue(0, BOOK_LIMIT, SIDE_BUY, 15, 2, 40);
-  top->cfg_slice = 2;
-  top->cfg_symbol = 2;
-  top->cfg_algo = ALGO_PRORATA;
+void cfg_algo(int s, uint8_t algo) {
+  top->cfg_slice = s;
+  top->cfg_symbol = s;
+  top->cfg_algo = algo;
   top->cfg_valid = 1;
   expect(top->cfg_ready, "idle slice accepts algo");
   tick();
   top->cfg_valid = 0;
-  expect_eq_u64(top->slice_algo[2], ALGO_PRORATA, "algo stored");
-  present(2, BOOK_LIMIT, SIDE_BUY, 15, 9, 41);
-  set_valid(2, true);
+  expect_eq_u64(top->slice_algo[s], algo, "algo stored");
+}
+
+void test_prorata_splits_the_queue() {
+  reset();
+  cfg_algo(2, ALGO_PRORATA);
+  issue(2, BOOK_LIMIT, SIDE_SELL, 100, 1, 1);
+  issue(2, BOOK_LIMIT, SIDE_SELL, 100, 3, 2);
+  fills.clear();
+  evt_seen = 0;
+  fire(2, BOOK_LIMIT, SIDE_BUY, 100, 2, 9);
+  expect(bit(top->cmd_ready, 0), "price-time slice stays ready during pro-rata");
+  Rsp odd = wait_rsp(2);
+  expect(odd.ok, "pro-rata take of 2 accepted");
+  expect_eq_u64(odd.filled, 2, "pro-rata filled 2");
+  expect_eq_u64(fills.size(), 2, "two pro-rata fills");
+  if (fills.size() == 2) {
+    expect_eq_u64(fills[0].maker, 1, "oldest gets the odd lot");
+    expect_eq_u64(fills[0].qty, 1, "oldest fill is 1");
+    expect_eq_u64(fills[1].maker, 2, "second maker");
+    expect_eq_u64(fills[1].qty, 1, "second fill is 1");
+    expect(fills[0].slice == 2 && fills[1].slice == 2, "fills stay on the pro-rata slice");
+  }
+
+  reset();
+  cfg_algo(2, ALGO_PRORATA);
+  issue(2, BOOK_LIMIT, SIDE_SELL, 100, 5, 1);
+  issue(2, BOOK_LIMIT, SIDE_SELL, 100, 5, 2);
+  issue(0, BOOK_LIMIT, SIDE_SELL, 100, 5, 10);
+  issue(0, BOOK_LIMIT, SIDE_SELL, 100, 5, 11);
+  fills.clear();
+  evt_seen = 0;
+  Rsp pr = issue(2, BOOK_LIMIT, SIDE_BUY, 100, 4, 9);
+  expect_eq_u64(pr.filled, 4, "equal pro-rata took 4");
+  expect_eq_u64(fills.size(), 2, "equal sizes split into two fills");
+  if (fills.size() == 2) {
+    expect_eq_u64(fills[0].maker, 1, "first half maker");
+    expect_eq_u64(fills[0].qty, 2, "first half is 2");
+    expect_eq_u64(fills[1].maker, 2, "second half maker");
+    expect_eq_u64(fills[1].qty, 2, "second half is 2");
+  }
+  expect_eq_u64(top->bbo_ask_qty[2], 6, "pro-rata leaves 3 and 3");
+  fills.clear();
+  evt_seen = 0;
+  Rsp fifo = issue(0, BOOK_LIMIT, SIDE_BUY, 100, 4, 12);
+  expect_eq_u64(fifo.filled, 4, "price-time took 4");
+  expect_eq_u64(fills.size(), 1, "price-time is one fill");
+  if (!fills.empty()) {
+    expect_eq_u64(fills[0].maker, 10, "price-time takes the oldest");
+    expect_eq_u64(fills[0].qty, 4, "price-time does not split");
+    expect_eq_u64(fills[0].slice, 0, "price-time fill stays on slice 0");
+  }
+  expect_eq_u64(top->bbo_ask_qty[0], 6, "price-time leaves 1 and 5");
+}
+
+void test_midpoint_still_naks() {
+  reset();
+  issue(0, BOOK_LIMIT, SIDE_BUY, 15, 2, 40);
+  cfg_algo(3, ALGO_MIDPOINT);
+  present(3, BOOK_LIMIT, SIDE_BUY, 15, 9, 41);
+  set_valid(3, true);
   tick();
-  set_valid(2, false);
-  Rsp nak{};
-  nak.ok = bit(top->rsp_ok, 2);
-  nak.filled = top->rsp_filled_qty[2];
-  expect(bit(top->rsp_valid, 2), "nak rsp");
-  expect(!nak.ok, "unimplemented algo naks");
-  expect_eq_u64(nak.filled, 0, "nak fills nothing");
-  expect(!bit(top->bbo_bid_valid, 2), "nak does not rest");
+  set_valid(3, false);
+  expect(bit(top->rsp_valid, 3), "midpoint nak rsp");
+  expect(!bit(top->rsp_ok, 3), "midpoint still naks");
+  expect_eq_u64(top->rsp_filled_qty[3], 0, "nak fills nothing");
+  expect(!bit(top->bbo_bid_valid, 3), "nak does not rest");
   Rsp c = issue(0, BOOK_CANCEL, SIDE_BUY, 0, 0, 40);
   expect(c.ok, "other slice still cancels");
 }
@@ -348,7 +402,8 @@ int main(int argc, char **argv) {
   test_two_slices_same_cycle();
   test_sweep_does_not_stall_other_slice();
   test_price_miss_does_not_stall_other_slice();
-  test_algo_nak_is_local();
+  test_prorata_splits_the_queue();
+  test_midpoint_still_naks();
   test_lookup_names_the_slice();
   test_cold_lookup_does_not_stall();
   test_reslice_when_idle();

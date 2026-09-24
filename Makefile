@@ -34,7 +34,7 @@ OID_BIN := $(OID_DIR)/$(OID_TOP)_sim
 TICK_BIN := $(TICK_DIR)/$(TICK_TOP)_sim
 TREE_BIN := $(TREE_DIR)/$(TREE_TOP)_sim
 WALK_BIN := $(WALK_DIR)/$(WALK_TOP)_sim
-BOOK_RTL := $(COMMON_RTL) rtl/book/tick_array.sv rtl/book/level_table.sv rtl/book/walker_fifo.sv rtl/book/one_symbol_book.sv
+BOOK_RTL := $(COMMON_RTL) rtl/book/tick_array.sv rtl/book/level_table.sv rtl/book/walker_fifo.sv rtl/book/walker_prorata.sv rtl/book/one_symbol_book.sv
 
 VFLAGS := --cc --exe --build -sv -Wall -CFLAGS "-std=c++17 -Wall"
 VERILATOR_ROOT ?= $(shell $(VERILATOR) --getenv VERILATOR_ROOT)

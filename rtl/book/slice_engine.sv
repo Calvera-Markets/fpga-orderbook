@@ -5,10 +5,9 @@
 // A walk or a held fill on slice A does not change cmd_ready or evt_ready
 // on slice B. Spec: design/sharded-matcher.md
 //
-// The book inside the slice is still the resident 8x16 price-time book.
-// A tile cache and an order-id map are not this module. An algo other
-// than FIFO is accepted and NAKed here so the host can run it. The book
-// is not touched.
+// The book inside the slice is the resident price-time book, or pro-rata
+// when the slice is set to that rule. Midpoint is still accepted and NAKed
+// here. The book is not touched for a rule it does not run.
 module slice_engine
   import exch_pkg::*;
 #(
@@ -107,7 +106,7 @@ module slice_engine
 
   always_comb begin
     for (int i = 0; i < N_SLICES; i++) begin
-      fifo_algo[i]        = (algo_q[i] == ALGO_FIFO);
+      fifo_algo[i]        = (algo_q[i] == ALGO_FIFO) || (algo_q[i] == ALGO_PRORATA);
       slice_symbol[i]     = sym_q[i];
       slice_algo[i]       = algo_q[i];
       slice_idle[i]       = book_idle[i] && !nak_busy[i];
@@ -203,6 +202,7 @@ module slice_engine
         .cmd_price (cmd_price[gi]),
         .cmd_qty   (cmd_qty[gi]),
         .cmd_oid   (cmd_oid[gi]),
+        .algo      (algo_q[gi]),
         .rsp_valid (book_rsp_valid[gi]),
         .rsp_ok    (book_rsp_ok[gi]),
         .rsp_oid   (book_rsp_oid[gi]),
