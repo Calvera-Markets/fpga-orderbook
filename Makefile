@@ -12,6 +12,7 @@ OID_TOP := oid_hash
 TICK_TOP := tick_array
 TREE_TOP := oid_tree
 WALK_TOP := walker_fifo
+FRAME_TOP := order_frame
 FIFO_DIR := obj_dir/price_level_fifo
 BOOK_DIR := obj_dir/book
 BANK_DIR := obj_dir/bank
@@ -23,6 +24,7 @@ OID_DIR := obj_dir/oid_hash
 TICK_DIR := obj_dir/tick_array
 TREE_DIR := obj_dir/oid_tree
 WALK_DIR := obj_dir/walker_fifo
+FRAME_DIR := obj_dir/order_frame
 FIFO_BIN := $(FIFO_DIR)/$(FIFO_TOP)_sim
 BOOK_BIN := $(BOOK_DIR)/$(BOOK_TOP)_sim
 BANK_BIN := $(BANK_DIR)/$(BANK_TOP)_sim
@@ -34,6 +36,7 @@ OID_BIN := $(OID_DIR)/$(OID_TOP)_sim
 TICK_BIN := $(TICK_DIR)/$(TICK_TOP)_sim
 TREE_BIN := $(TREE_DIR)/$(TREE_TOP)_sim
 WALK_BIN := $(WALK_DIR)/$(WALK_TOP)_sim
+FRAME_BIN := $(FRAME_DIR)/$(FRAME_TOP)_sim
 BOOK_RTL := $(COMMON_RTL) rtl/book/tick_array.sv rtl/book/level_table.sv rtl/book/walker_fifo.sv rtl/book/walker_prorata.sv rtl/book/walker_mid.sv rtl/book/one_symbol_book.sv
 
 VFLAGS := --cc --exe --build -sv -Wall -CFLAGS "-std=c++17 -Wall"
@@ -45,7 +48,7 @@ ifeq ($(shell uname),Darwin)
 LIBLDFLAGS := -Wl,-U,__Z15vl_time_stamp64v,-U,__Z13sc_time_stampv,-U,_vlog_startup_routines
 endif
 
-.PHONY: all help golden sim sim-fifo sim-book sim-bank sim-part sim-slice sim-level sim-touch sim-oid sim-tick sim-tree sim-walk lib rtl-gw test clean run
+.PHONY: all help golden sim sim-fifo sim-book sim-bank sim-part sim-slice sim-level sim-touch sim-oid sim-tick sim-tree sim-walk sim-frame lib rtl-gw test clean run
 
 all: test
 
@@ -147,7 +150,14 @@ $(WALK_BIN): rtl/book/walker_fifo.sv tb/walker_fifo_tb.cpp
 sim-walk: $(WALK_BIN)
 	$(WALK_BIN)
 
-sim: sim-fifo sim-book sim-bank sim-part sim-slice sim-level sim-walk
+$(FRAME_BIN): rtl/pkg/exch_pkg.sv rtl/gateway/order_frame.sv tb/order_frame_tb.cpp
+	$(VERILATOR) $(VFLAGS) --top-module $(FRAME_TOP) -Mdir $(FRAME_DIR) -o $(FRAME_TOP)_sim \
+		rtl/pkg/exch_pkg.sv rtl/gateway/order_frame.sv tb/order_frame_tb.cpp
+
+sim-frame: $(FRAME_BIN)
+	$(FRAME_BIN)
+
+sim: sim-fifo sim-book sim-bank sim-part sim-slice sim-level sim-walk sim-frame
 
 SLICE_RTL := $(BOOK_RTL) rtl/book/touch_tile.sv rtl/book/tile_store.sv rtl/book/oid_hash.sv rtl/book/oid_tree.sv rtl/book/slice_engine.sv
 
