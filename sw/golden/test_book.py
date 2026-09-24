@@ -72,6 +72,13 @@ class TestBook(unittest.TestCase):
         self.assertFalse(r.ok)
         self.assertEqual(b.bbo_bid_qty, 10)
 
+    def test_price_outside_window_does_not_rest(self) -> None:
+        b = Book()
+        r = b.limit(SIDE_BUY, 200, 4, 1)
+        self.assertFalse(r.ok)
+        self.assertEqual(r.unrested_qty, 4)
+        self.assertFalse(b.bbo_bid_valid)
+
     def test_qty_zero_rejected(self) -> None:
         b = Book()
         r = b.limit(SIDE_BUY, 100, 0, 1)

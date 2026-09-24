@@ -6,17 +6,20 @@ BOOK_TOP := one_symbol_book
 BANK_TOP := symbol_bank
 PART_TOP := partitioned_engine
 SLICE_TOP := slice_engine
+LVL_TOP := level_table
 FIFO_DIR := obj_dir/price_level_fifo
 BOOK_DIR := obj_dir/book
 BANK_DIR := obj_dir/bank
 PART_DIR := obj_dir/part
 SLICE_DIR := obj_dir/slice
+LVL_DIR := obj_dir/level_table
 FIFO_BIN := $(FIFO_DIR)/$(FIFO_TOP)_sim
 BOOK_BIN := $(BOOK_DIR)/$(BOOK_TOP)_sim
 BANK_BIN := $(BANK_DIR)/$(BANK_TOP)_sim
 PART_BIN := $(PART_DIR)/$(PART_TOP)_sim
 SLICE_BIN := $(SLICE_DIR)/$(SLICE_TOP)_sim
-BOOK_RTL := $(COMMON_RTL) rtl/book/one_symbol_book.sv
+LVL_BIN := $(LVL_DIR)/$(LVL_TOP)_sim
+BOOK_RTL := $(COMMON_RTL) rtl/book/level_table.sv rtl/book/one_symbol_book.sv
 
 VFLAGS := --cc --exe --build -sv -Wall -CFLAGS "-std=c++17 -Wall"
 VERILATOR_ROOT ?= $(shell $(VERILATOR) --getenv VERILATOR_ROOT)
@@ -27,7 +30,7 @@ ifeq ($(shell uname),Darwin)
 LIBLDFLAGS := -Wl,-U,__Z15vl_time_stamp64v,-U,__Z13sc_time_stampv,-U,_vlog_startup_routines
 endif
 
-.PHONY: all help golden sim sim-fifo sim-book sim-bank sim-part sim-slice lib rtl-gw test clean run
+.PHONY: all help golden sim sim-fifo sim-book sim-bank sim-part sim-slice sim-level lib rtl-gw test clean run
 
 all: test
 
@@ -38,6 +41,7 @@ help:
 	@echo "make sim-bank  multi-symbol bank (one pipe)"
 	@echo "make sim-part  partitioned engine (K pipes)"
 	@echo "make sim-slice slice engine (one book per slice, private ports)"
+	@echo "make sim-level price-addressed level table"
 	@echo "make lib       Verilator slice_engine as libpe.so (gateway --engine rtl)"
 	@echo "make sim       all RTL benches"
 	@echo "make test      golden + all RTL sims + rtl gateway"
@@ -83,7 +87,14 @@ sim-part: $(PART_BIN)
 sim-slice: $(SLICE_BIN)
 	$(SLICE_BIN)
 
-sim: sim-fifo sim-book sim-bank sim-part sim-slice
+$(LVL_BIN): rtl/pkg/exch_pkg.sv rtl/book/level_table.sv tb/level_table_tb.cpp
+	$(VERILATOR) $(VFLAGS) --top-module $(LVL_TOP) -Mdir $(LVL_DIR) -o $(LVL_TOP)_sim \
+		rtl/pkg/exch_pkg.sv rtl/book/level_table.sv tb/level_table_tb.cpp
+
+sim-level: $(LVL_BIN)
+	$(LVL_BIN)
+
+sim: sim-fifo sim-book sim-bank sim-part sim-slice sim-level
 
 SLICE_RTL := $(BOOK_RTL) rtl/book/slice_engine.sv
 

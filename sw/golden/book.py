@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from price_level import PriceLevel
 
 N_LEVELS = 8
+PRICE_WIN = 128
 SIDE_BUY = 0
 SIDE_SELL = 1
 BOOK_LIMIT = 0
@@ -93,7 +94,11 @@ class Book:
         ok = True
         if remaining:
             book = self.bids if side == SIDE_BUY else self.asks
-            if price not in book:
+            if price >= PRICE_WIN:
+                unrested = remaining
+                ok = False
+                remaining = 0
+            elif price not in book:
                 if len(book) >= self.n_levels:
                     unrested = remaining
                     ok = False

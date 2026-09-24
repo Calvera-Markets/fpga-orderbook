@@ -12,6 +12,8 @@ package exch_pkg;
   localparam int IDX_W      = $clog2(MAX_ORDERS);
   localparam int CNT_W      = $clog2(MAX_ORDERS + 1);
   localparam int N_LEVELS   = 8;
+  // On-chip price window. A price at or above this is not a level address.
+  localparam int PRICE_WIN  = 128;
   localparam int LVL_IDX_W  = $clog2(N_LEVELS);
   localparam int N_PIPES    = 8;
   localparam int PIPE_W     = $clog2(N_PIPES);

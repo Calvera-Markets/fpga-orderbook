@@ -220,19 +220,36 @@ module one_symbol_book
   logic               rest_found_ask, rest_alloc_ask;
   logic [LVL_IDX_W-1:0] rest_idx_ask;
 
+  wire                 bid_lat_win, bid_lat_hit, ask_lat_win, ask_lat_hit;
+  wire                 bid_l_win, bid_l_hit, ask_l_win, ask_l_hit;
+  wire [LVL_IDX_W-1:0] bid_lat_slot, ask_lat_slot, bid_l_slot, ask_l_slot;
+
+  level_table u_bid_latched (
+    .used(bid_used), .px(bid_px), .probe(latched_px),
+    .in_window(bid_lat_win), .hit(bid_lat_hit), .slot(bid_lat_slot)
+  );
+  level_table u_ask_latched (
+    .used(ask_used), .px(ask_px), .probe(latched_px),
+    .in_window(ask_lat_win), .hit(ask_lat_hit), .slot(ask_lat_slot)
+  );
+  level_table u_bid_rest (
+    .used(bid_used), .px(bid_px), .probe(bid_px_l),
+    .in_window(bid_l_win), .hit(bid_l_hit), .slot(bid_l_slot)
+  );
+  level_table u_ask_rest (
+    .used(ask_used), .px(ask_px), .probe(ask_px_l),
+    .in_window(ask_l_win), .hit(ask_l_hit), .slot(ask_l_slot)
+  );
+
   always_comb begin
     rest_found = 1'b0;
     rest_alloc = 1'b0;
     rest_idx   = '0;
     if (latched_side == SIDE_BUY) begin
-      for (int i = 0; i < N_LEVELS; i++) begin
-        if (bid_used[i] && bid_px[i] == latched_px) begin
-          rest_found = 1'b1;
-          rest_alloc = 1'b0;
-          rest_idx   = LVL_IDX_W'(i);
-        end
-      end
-      if (!rest_found) begin
+      if (bid_lat_hit) begin
+        rest_found = 1'b1;
+        rest_idx   = bid_lat_slot;
+      end else if (bid_lat_win) begin
         for (int i = 0; i < N_LEVELS; i++) begin
           if (!rest_found && !bid_used[i]) begin
             rest_found = 1'b1;
@@ -242,14 +259,10 @@ module one_symbol_book
         end
       end
     end else begin
-      for (int i = 0; i < N_LEVELS; i++) begin
-        if (ask_used[i] && ask_px[i] == latched_px) begin
-          rest_found = 1'b1;
-          rest_alloc = 1'b0;
-          rest_idx   = LVL_IDX_W'(i);
-        end
-      end
-      if (!rest_found) begin
+      if (ask_lat_hit) begin
+        rest_found = 1'b1;
+        rest_idx   = ask_lat_slot;
+      end else if (ask_lat_win) begin
         for (int i = 0; i < N_LEVELS; i++) begin
           if (!rest_found && !ask_used[i]) begin
             rest_found = 1'b1;
@@ -265,14 +278,10 @@ module one_symbol_book
     rest_found_bid = 1'b0;
     rest_alloc_bid = 1'b0;
     rest_idx_bid   = '0;
-    for (int i = 0; i < N_LEVELS; i++) begin
-      if (bid_used[i] && bid_px[i] == bid_px_l) begin
-        rest_found_bid = 1'b1;
-        rest_alloc_bid = 1'b0;
-        rest_idx_bid   = LVL_IDX_W'(i);
-      end
-    end
-    if (!rest_found_bid) begin
+    if (bid_l_hit) begin
+      rest_found_bid = 1'b1;
+      rest_idx_bid   = bid_l_slot;
+    end else if (bid_l_win) begin
       for (int i = 0; i < N_LEVELS; i++) begin
         if (!rest_found_bid && !bid_used[i]) begin
           rest_found_bid = 1'b1;
@@ -287,14 +296,10 @@ module one_symbol_book
     rest_found_ask = 1'b0;
     rest_alloc_ask = 1'b0;
     rest_idx_ask   = '0;
-    for (int i = 0; i < N_LEVELS; i++) begin
-      if (ask_used[i] && ask_px[i] == ask_px_l) begin
-        rest_found_ask = 1'b1;
-        rest_alloc_ask = 1'b0;
-        rest_idx_ask   = LVL_IDX_W'(i);
-      end
-    end
-    if (!rest_found_ask) begin
+    if (ask_l_hit) begin
+      rest_found_ask = 1'b1;
+      rest_idx_ask   = ask_l_slot;
+    end else if (ask_l_win) begin
       for (int i = 0; i < N_LEVELS; i++) begin
         if (!rest_found_ask && !ask_used[i]) begin
           rest_found_ask = 1'b1;
