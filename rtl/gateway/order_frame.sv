@@ -12,7 +12,7 @@ module order_frame
 
   input  wire                word_valid,
   output wire                word_ready,
-  input  wire                word_op,
+  input  wire [1:0]         word_op,
   input  wire                word_side,
   input  wire [SYMBOL_W-1:0] word_symbol,
   input  wire [PRICE_W-1:0]  word_price,
@@ -52,12 +52,12 @@ module order_frame
       cmd_oid[i]   = '0;
     end
     if (word_valid && word_ready) begin
-      if (!in_range) begin
+      if (!in_range || word_op == 2'd2) begin
         reject_valid  = 1'b1;
-        reject_reason = 8'd1;
+        reject_reason = (word_op == 2'd2) ? 8'd6 : 8'd1;
       end else begin
         cmd_valid[dest] = 1'b1;
-        cmd_op[dest]    = word_op;
+        cmd_op[dest]    = word_op[0];
         cmd_side[dest]  = word_side;
         cmd_price[dest] = word_price;
         cmd_qty[dest]   = word_qty;

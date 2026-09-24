@@ -101,6 +101,29 @@ class TestExchangeWal(unittest.TestCase):
             self.assertEqual(c2[0]["seq"], 1)
 
 
+class TestTwoSlice(unittest.TestCase):
+    def test_parent_becomes_two_child_limits(self) -> None:
+        from slice_table import SlicedVenue
+        from spread import TwoSlice
+
+        venue = SlicedVenue()
+        host = TwoSlice(venue)
+        parent = 50
+        first, second = host.submit(0, SIDE_BUY, 10, 1, 1, SIDE_SELL, 20, 1, parent)
+        self.assertIsNone(venue.oids.get(parent))
+        self.assertEqual(venue.oids.get(first), 0)
+        self.assertEqual(venue.oids.get(second), 1)
+        self.assertTrue(venue.book(0).bbo_bid_valid)
+        self.assertTrue(venue.book(1).bbo_ask_valid)
+        self.assertEqual(host.steps, [first, second])
+        host.busy.add(venue.pipe(0))
+        host.cancel(parent)
+        self.assertTrue(venue.book(0).bbo_bid_valid)
+        self.assertFalse(venue.book(1).bbo_ask_valid)
+        host.release(venue.pipe(0))
+        self.assertFalse(venue.book(0).bbo_bid_valid)
+
+
 class TestAuction(unittest.TestCase):
     def test_batch_is_ordinary_limits_after_an_off_chip_gap(self) -> None:
         from auction import SIDE_BUY, SIDE_SELL, Auction

@@ -14,7 +14,7 @@ module frame_top
   input  wire [7:0]          word_session,
   input  wire [31:0]         word_seq,
   input  wire                word_kill,
-  input  wire                word_op,
+  input  wire [1:0]         word_op,
   input  wire                word_side,
   input  wire [SYMBOL_W-1:0] word_symbol,
   input  wire [PRICE_W-1:0]  word_price,

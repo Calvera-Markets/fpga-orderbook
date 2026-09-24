@@ -128,6 +128,18 @@ void test_risk_and_kill() {
   expect(!top->reject_valid && bit(top->cmd_valid, 1), "another session still trades");
 }
 
+void test_two_symbol_op_is_a_host_reject() {
+  reset();
+  set_word(0, 1, 0, 0, 10, 1, 50);
+  top->word_op = 2;
+  top->word_valid = 1;
+  top->eval();
+  expect(top->reject_valid, "two-symbol op is a host reject");
+  expect(top->reject_reason == 6, "reason is the host reject");
+  expect(top->cmd_valid == 0, "neither slice sees the parent");
+  expect(top->reject_oid == 50, "reject names the parent oid");
+}
+
 void test_sequence_gap_does_not_enter() {
   reset();
   set_word(0, 1, 0, 0, 10, 1, 1);
@@ -162,6 +174,7 @@ int main(int argc, char **argv) {
   test_busy_slice_does_not_hold_the_other();
   test_sequence_gap_does_not_enter();
   test_risk_and_kill();
+  test_two_symbol_op_is_a_host_reject();
   if (errors == 0) std::cout << "order_frame: " << checks << " checks passed\n";
   else std::cout << "order_frame: " << errors << " errors in " << checks << " checks\n";
   delete top;
