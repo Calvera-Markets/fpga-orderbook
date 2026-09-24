@@ -1,6 +1,7 @@
 import unittest
 
 from book import SIDE_BUY, Book
+from tile import Tile
 
 
 class TestTile(unittest.TestCase):
@@ -15,3 +16,12 @@ class TestTile(unittest.TestCase):
         self.assertEqual(b.last_wait, 0)
         self.assertEqual(a.touch[SIDE_BUY], 105)
         self.assertEqual(b.touch[SIDE_BUY], 100)
+
+
+class TestTileRecord(unittest.TestCase):
+    def test_round_trip_keeps_oldest_first(self) -> None:
+        tile = Tile(symbol=1, side=SIDE_BUY, price=100)
+        tile.add(1, 4)
+        tile.add(2, 1)
+        tile.add(3, 9)
+        self.assertEqual(tile.oldest_first(), [(1, 4), (2, 1), (3, 9)])
