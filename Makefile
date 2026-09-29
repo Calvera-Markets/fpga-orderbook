@@ -48,7 +48,7 @@ ifeq ($(shell uname),Darwin)
 LIBLDFLAGS := -Wl,-U,__Z15vl_time_stamp64v,-U,__Z13sc_time_stampv,-U,_vlog_startup_routines
 endif
 
-.PHONY: all help golden sim sim-fifo sim-book sim-bank sim-part sim-slice sim-level sim-touch sim-oid sim-tick sim-tree sim-walk sim-frame lib rtl-gw test clean run
+.PHONY: all help golden sim sim-fifo sim-book sim-bank sim-part sim-slice sim-level sim-touch sim-oid sim-tick sim-tree sim-walk sim-frame lib rtl-gw test clean run paper paper-view paper-watch paper-clean
 
 all: test
 
@@ -180,6 +180,18 @@ test: golden sim rtl-gw
 
 run: $(LIBPE)
 	python3 sw/gateway/main.py --wal data --engine rtl
+
+paper:
+	$(MAKE) -C paper pdf
+
+paper-view:
+	$(MAKE) -C paper view
+
+paper-watch:
+	$(MAKE) -C paper watch
+
+paper-clean:
+	$(MAKE) -C paper clean
 
 clean:
 	rm -rf obj_dir
