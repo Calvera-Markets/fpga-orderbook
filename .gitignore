@@ -8,3 +8,15 @@ __pycache__/
 .DS_Store
 data/
 *.wal
+design/*
+paper/*
+paper/*.aux
+paper/*.log
+paper/*.toc
+paper/*.out
+paper/*.bbl
+paper/*.blg
+paper/*.xdv
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.synctex.gz
